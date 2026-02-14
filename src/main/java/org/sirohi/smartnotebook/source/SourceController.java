@@ -1,6 +1,5 @@
 package org.sirohi.smartnotebook.source;
 
-import org.sirohi.smartnotebook.domain.Document;
 import org.sirohi.smartnotebook.source.dto.UploadRequest;
 import org.sirohi.smartnotebook.source.dto.UploadResponse;
 import org.slf4j.Logger;

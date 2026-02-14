@@ -3,7 +3,6 @@ package org.sirohi.smartnotebook.source;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.sirohi.smartnotebook.domain.Document;
-import org.sirohi.smartnotebook.domain.DocumentStatus;
 import org.sirohi.smartnotebook.queue.MessagePublisher;
 import org.sirohi.smartnotebook.source.dto.UploadRequest;
 import org.sirohi.smartnotebook.source.dto.UploadResponse;
