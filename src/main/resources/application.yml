@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: smart-notebook
+  profiles:
+    active: dev
+
+  # Disable Anthropic to prevent "missing API key" error in dev
+  ai:
+    anthropic:
+      chat:
+        enabled: false
+      embedding:
+        enabled: false
+
+  # Needed for Spring AI 2.0.0-M2 / Boot 3.4.3 compatibility
+  main:
+    allow-bean-definition-overriding: true
