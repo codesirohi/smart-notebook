@@ -41,15 +41,19 @@ public class Document {
     @Column(name = "error_message")
     private String errorMessage;
 
+    @Column(name = "storage_location", length = 1024)
+    private String storageLocation;
+
     protected Document() {
         // JPA
     }
 
-    public Document(String filename, String mimeType, String contentHash, Long fileSizeBytes) {
+    public Document(String filename, String mimeType, String contentHash, Long fileSizeBytes, String storageLocation) {
         this.filename = filename;
         this.mimeType = mimeType;
         this.contentHash = contentHash;
         this.fileSizeBytes = fileSizeBytes;
+        this.storageLocation = storageLocation;
     }
 
     // --- Getters ---
@@ -88,6 +92,10 @@ public class Document {
 
     public String getErrorMessage() {
         return errorMessage;
+    }
+
+    public String getStorageLocation() {
+        return storageLocation;
     }
 
     // --- Status transitions ---

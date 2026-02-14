@@ -62,7 +62,9 @@ public class SourceService {
                 request.filename(),
                 request.mimeType(),
                 request.contentHash(),
-                request.fileSizeBytes());
+                request.fileSizeBytes(),
+                request.tempFilePath() // We use this field to carry the storage location
+        );
         document = sourceRepository.save(document);
         log.info("Saved new document '{}' with id={}", request.filename(), document.getId());
 
@@ -89,7 +91,8 @@ public class SourceService {
                     "documentId", document.getId().toString(),
                     "filename", document.getFilename(),
                     "mimeType", document.getMimeType(),
-                    "fileSizeBytes", document.getFileSizeBytes() != null ? document.getFileSizeBytes() : 0);
+                    "storageLocation", document.getStorageLocation(),
+                    "fileSizeBytes", document.getFileSizeBytes() != null ? document.getFileSizeBytes() : 0L);
             String json = objectMapper.writeValueAsString(payload);
             messagePublisher.publish(document.getId().toString(), json);
         } catch (JsonProcessingException e) {

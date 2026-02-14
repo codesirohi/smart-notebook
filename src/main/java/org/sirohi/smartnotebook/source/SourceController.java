@@ -2,6 +2,7 @@ package org.sirohi.smartnotebook.source;
 
 import org.sirohi.smartnotebook.source.dto.UploadRequest;
 import org.sirohi.smartnotebook.source.dto.UploadResponse;
+import org.sirohi.smartnotebook.source.storage.StorageProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -36,9 +37,11 @@ public class SourceController {
     private static final Logger log = LoggerFactory.getLogger(SourceController.class);
 
     private final SourceService sourceService;
+    private final StorageProvider storageProvider;
 
-    public SourceController(SourceService sourceService) {
+    public SourceController(SourceService sourceService, StorageProvider storageProvider) {
         this.sourceService = sourceService;
+        this.storageProvider = storageProvider;
     }
 
     /**
@@ -61,12 +64,15 @@ public class SourceController {
             byte[] content = file.getBytes();
             String contentHash = computeSha256(content);
 
+            // Store file to disk/S3
+            String storageLocation = storageProvider.store(file, contentHash);
+
             UploadRequest request = new UploadRequest(
                     file.getOriginalFilename(),
                     file.getContentType() != null ? file.getContentType() : "application/octet-stream",
                     contentHash,
                     file.getSize(),
-                    null // temp file path not needed — content already in memory for small files
+                    storageLocation // Pass the permanent storage location
             );
 
             UploadResponse response = sourceService.upload(request);

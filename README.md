@@ -49,6 +49,7 @@ Smart Notebook is an **AI-native personal knowledge base** that ingests your doc
 - **📄 Document Ingestion**
   - Multi-format support (PDF, Markdown, TXT)
   - Content deduplication via SHA-256 hashing
+  - **Storage-backed ingestion:** Files stored locally (dev) or S3 (prod) before processing
   - Async processing pipeline (upload never blocks queries)
   
 - **🔍 Intelligent Retrieval**
@@ -136,6 +137,7 @@ classDiagram
     }
     class SourceService {
         -List~FileSource~ sources
+        -StorageProvider storageProvider
         -MessagePublisher publisher
         +ingest(SourceReference) UploadResponse
     }
@@ -175,7 +177,27 @@ classDiagram
     FileSource <|.. LocalUploadSource
     FileSource <|.. S3Source
     FileSource <|.. GoogleDriveSource
+    FileSource <|.. GoogleDriveSource
     SourceService --> FileSource : resolves by type
+
+    %% ── STORAGE LAYER ──────────────────────────────────────
+
+    class StorageProvider {
+        <<interface>>
+        +store(file, hash) String
+    }
+    class LocalFileSystemStorageProvider {
+        +store(file, hash) String
+    }
+    class S3StorageProvider {
+        <<future>>
+        +store(file, hash) String
+    }
+
+    StorageProvider <|.. LocalFileSystemStorageProvider
+    StorageProvider <|.. S3StorageProvider
+    SourceService --> StorageProvider : stores file before queue
+    SourceService --> MessagePublisher : enqueues path
 
     %% ── QUEUE LAYER ────────────────────────────────────────
 
