@@ -33,6 +33,9 @@ app:
     default-top-k: 5
     max-top-k: 20
 
+  chat:
+    history-window: 10  # Number of recent messages to include in RAG context
+
 # Ollama config
 ollama:
   base-url: ${OLLAMA_URL:http://localhost:11434}

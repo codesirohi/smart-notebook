@@ -10,43 +10,21 @@ import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * JPA entity for the documents table.
- */
 @Entity
-@Table(name = "documents")
+@Table(name = "notebooks")
 @Getter
 @Setter
-public class Document {
+public class Notebook {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(nullable = false, length = 500)
-    private String title;
+    @Column(nullable = false, length = 200)
+    private String name;
 
-    @Column(name = "content_type", nullable = false, length = 50)
-    private String contentType;
-
-    @Column(name = "raw_content", columnDefinition = "TEXT")
-    private String rawContent;
-
-    @Column(name = "file_path", length = 1000)
-    private String filePath;
-
-    @Column(name = "file_size_bytes")
-    private Long fileSizeBytes;
-
-    @Column(length = 64)
-    private String checksum;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "notebook_id", nullable = false)
-    private Notebook notebook;
-
-    @Column(length = 20)
-    private String status = "UPLOADED";
+    @Column(columnDefinition = "TEXT")
+    private String description;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")

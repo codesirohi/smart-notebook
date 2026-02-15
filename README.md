@@ -1,7 +1,7 @@
 # Smart Notebook 🧠
 
 > **AI-Powered Knowledge Base with RAG**
-> Upload documents → Ingest & embed asynchronously → Ask questions → Get cited, grounded answers
+> Organize knowledge into notebooks → Upload documents → Chat with your data → Get cited, grounded answers
 
 [![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.java.net/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.4.3-brightgreen.svg)](https://spring.io/projects/spring-boot)
@@ -12,10 +12,12 @@
 
 ## Overview
 
-Smart Notebook is a knowledge base that ingests documents (PDFs, Markdown, text), chunks and embeds them using AI, and answers natural-language questions with **cited, grounded responses** via Retrieval Augmented Generation (RAG).
+Smart Notebook is a knowledge base that organizes documents into **notebooks**, ingests them (PDFs, Markdown, text), and provides **conversational RAG-powered chat** with cited, grounded answers scoped to each notebook's knowledge.
 
 **Key architectural choices:**
 
+- **Multi-notebook isolation** — Each notebook is an independent knowledge workspace with its own documents and chat threads
+- **Conversational chat** — Persistent chat history injected into the RAG prompt for follow-up questions and contextual dialogue
 - **Polyglot design** — Java API (Spring Boot) + Python ingestion worker, each using the language best suited to its role
 - **Postgres-as-queue** — `SELECT FOR UPDATE SKIP LOCKED` for async task processing with exactly-once semantics — no external broker needed
 - **Vendor-agnostic model abstraction** — `ModelGateway` interface makes LLM providers swappable via configuration
@@ -31,10 +33,11 @@ Smart Notebook is a knowledge base that ingests documents (PDFs, Markdown, text)
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │  Spring Boot    │     │   PostgreSQL    │     │  Python Worker  │
 │  REST API       │────▶│                 │◀────│  (CLI Poller)   │
-│                 │     │  - documents    │     │                 │
-│  /api/upload    │     │  - task_queue   │     │  poll → extract │
-│  /api/query     │     │  - embeddings   │     │  → chunk → embed│
-│  /api/health    │     │  (pgvector)     │     │  → store        │
+│                 │     │  - notebooks    │     │                 │
+│  /api/notebooks │     │  - documents    │     │  poll → extract │
+│  /api/chats     │     │  - chats        │     │  → chunk → embed│
+│  /api/health    │     │  - embeddings   │     │  → store        │
+│                 │     │  (pgvector)     │     │                 │
 └─────────────────┘     └─────────────────┘     └────────┬────────┘
                                                          │
                                                          ▼
@@ -46,11 +49,11 @@ Smart Notebook is a knowledge base that ingests documents (PDFs, Markdown, text)
 ```
 
 **Data flow:**
-1. User uploads a document via REST API
+1. User creates a notebook and uploads documents to it
 2. API stores document metadata + creates a `PENDING` task in the ingestion queue
 3. Python worker claims the task atomically, extracts text, chunks it, generates embeddings via Ollama
 4. Embeddings stored in pgvector; task marked `COMPLETED`
-5. User queries via `/api/query` — API embeds the question, runs vector similarity search, assembles context, and gets a RAG-powered answer with citations
+5. User starts a chat in the notebook — each message triggers a RAG query **scoped to that notebook's documents**, with conversation history for follow-up context
 
 ---
 
@@ -102,17 +105,26 @@ make worker
 # Health check
 curl http://localhost:8080/api/health
 
-# Upload a document
-curl -X POST http://localhost:8080/api/documents/upload \
+# Create a notebook
+curl -X POST http://localhost:8080/api/notebooks \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Research Papers"}'
+
+# Upload a document to a notebook
+curl -X POST http://localhost:8080/api/notebooks/{notebookId}/documents/upload \
   -F "file=@sample.pdf"
 
 # Check ingestion status
 curl http://localhost:8080/api/tasks/{taskId}/status
 
-# Ask a question
-curl -X POST http://localhost:8080/api/query \
+# Start a chat and ask questions
+curl -X POST http://localhost:8080/api/notebooks/{notebookId}/chats \
   -H "Content-Type: application/json" \
-  -d '{"question": "What are the key findings?", "topK": 5}'
+  -d '{"title": "Paper Q&A"}'
+
+curl -X POST http://localhost:8080/api/chats/{chatId}/messages \
+  -H "Content-Type: application/json" \
+  -d '{"content": "What are the key findings?"}'
 ```
 
 ---
@@ -122,11 +134,11 @@ curl -X POST http://localhost:8080/api/query \
 ```
 smart-notebook/
 ├── src/main/java/org/sirohi/smartnotebook/
-│   ├── controller/          # REST endpoints (Document, Query, Health)
-│   ├── service/             # Business logic (Document, Ingestion, Query, FileStorage)
+│   ├── controller/          # REST endpoints (Notebook, Document, Chat, Health)
+│   ├── service/             # Business logic (Notebook, Document, Chat, Ingestion, Query)
 │   ├── gateway/             # ModelGateway interface + OllamaModelGateway
-│   ├── repository/          # DocumentRepository, VectorSearchRepository, QueryLogRepository
-│   ├── model/               # JPA entities
+│   ├── repository/          # NotebookRepo, DocumentRepo, ChatRepo, VectorSearchRepo
+│   ├── model/               # JPA entities (Notebook, Document, Chat, ChatMessage)
 │   ├── dto/                 # Request/response records
 │   └── exception/           # Global error handling
 ├── src/main/resources/
@@ -150,13 +162,39 @@ smart-notebook/
 
 ## API Endpoints
 
+### Notebooks
+
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/documents/upload` | Upload a document (multipart) |
-| `GET` | `/api/documents` | List all documents (paginated) |
+| `POST` | `/api/notebooks` | Create a notebook |
+| `GET` | `/api/notebooks` | List all notebooks |
+| `GET` | `/api/notebooks/{id}` | Get notebook details |
+| `PUT` | `/api/notebooks/{id}` | Update notebook |
+| `DELETE` | `/api/notebooks/{id}` | Delete notebook + all data |
+
+### Documents
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/notebooks/{id}/documents/upload` | Upload document to a notebook |
+| `GET` | `/api/notebooks/{id}/documents` | List documents in a notebook |
 | `GET` | `/api/documents/{id}` | Get document details |
 | `GET` | `/api/tasks/{taskId}/status` | Check ingestion task status |
-| `POST` | `/api/query` | Ask a question (RAG) |
+
+### Chat
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/notebooks/{id}/chats` | Start a new chat |
+| `GET` | `/api/notebooks/{id}/chats` | List chats in a notebook |
+| `GET` | `/api/chats/{chatId}` | Get chat with message history |
+| `POST` | `/api/chats/{chatId}/messages` | Send a message (RAG query) |
+| `DELETE` | `/api/chats/{chatId}` | Delete a chat |
+
+### System
+
+| Method | Path | Description |
+|---|---|---|
 | `GET` | `/api/health` | System health (DB, Ollama, queue stats) |
 
 ---
@@ -194,12 +232,13 @@ make clean          # Clean build artifacts
 
 ## Roadmap
 
-See [SMART_NOTEBOOK_BLUEPRINT.md §18](SMART_NOTEBOOK_BLUEPRINT.md) for the full evolution path.
+See [SMART_NOTEBOOK_BLUEPRINT.md](SMART_NOTEBOOK_BLUEPRINT.md) for the full evolution path and detailed design.
 
 | Phase | Focus | Status |
 |---|---|---|
 | **Phase 1** | Upload → Ingest → Query with citations | ✅ Complete |
-| **Phase 2** | Hybrid search, reranking, multi-model routing | Planned |
+| **Phase 1.5** | Multi-notebook organization, conversational chat | 🚧 In Progress |
+| **Phase 2** | Hybrid search (BM25 + vector), reranking, multi-model routing | Planned |
 | **Phase 3** | Groundedness validation, evaluation framework, feedback loop | Planned |
 | **Phase 4** | Agentic RAG, multi-agent coordination, table/image understanding | Planned |
 
