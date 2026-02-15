@@ -70,3 +70,81 @@ RuntimeError: Graph failed: ['Ollama embedding failed after 3 retries']
 2026-02-15 22:30:00 [INFO] worker: Still waiting for tasks...
 2026-02-15 22:31:00 [INFO] worker: Still waiting for tasks...
 2026-02-15 22:32:00 [INFO] worker: Still waiting for tasks...
+2026-02-15 22:33:00 [INFO] worker: Still waiting for tasks...
+2026-02-15 22:34:01 [INFO] worker: Still waiting for tasks...
+2026-02-15 22:35:01 [INFO] worker: Still waiting for tasks...
+2026-02-15 22:35:33 [ERROR] worker: Worker loop error: connection already closed
+Traceback (most recent call last):
+  File "/Users/shubham/Documents/prep/smart-notebook/worker/db.py", line 22, in get_cursor
+    yield cur
+  File "/Users/shubham/Documents/prep/smart-notebook/worker/db.py", line 37, in claim_task
+    cur.execute("""
+  File "/Users/shubham/Documents/prep/smart-notebook/.venv/lib/python3.12/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/shubham/Documents/prep/smart-notebook/worker/worker.py", line 97, in run_worker
+    task = claim_task(conn, config.worker_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/shubham/Documents/prep/smart-notebook/worker/db.py", line 36, in claim_task
+    with get_cursor(conn) as cur:
+  File "/opt/homebrew/Cellar/python@3.12/3.12.4/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/Users/shubham/Documents/prep/smart-notebook/worker/db.py", line 26, in get_cursor
+    conn.rollback()
+psycopg2.InterfaceError: connection already closed
+Traceback (most recent call last):
+  File "/Users/shubham/Documents/prep/smart-notebook/worker/db.py", line 22, in get_cursor
+    yield cur
+  File "/Users/shubham/Documents/prep/smart-notebook/worker/db.py", line 37, in claim_task
+    cur.execute("""
+  File "/Users/shubham/Documents/prep/smart-notebook/.venv/lib/python3.12/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/shubham/Documents/prep/smart-notebook/worker/worker.py", line 97, in run_worker
+    task = claim_task(conn, config.worker_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/shubham/Documents/prep/smart-notebook/worker/db.py", line 36, in claim_task
+    with get_cursor(conn) as cur:
+  File "/opt/homebrew/Cellar/python@3.12/3.12.4/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/Users/shubham/Documents/prep/smart-notebook/worker/db.py", line 26, in get_cursor
+    conn.rollback()
+psycopg2.InterfaceError: connection already closed
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/shubham/Documents/prep/smart-notebook/worker/worker.py", line 204, in <module>
+    main()
+  File "/Users/shubham/Documents/prep/smart-notebook/worker/worker.py", line 201, in main
+    run_worker()
+  File "/Users/shubham/Documents/prep/smart-notebook/worker/worker.py", line 172, in run_worker
+    conn = get_connection()
+           ^^^^^^^^^^^^^^^^
+  File "/Users/shubham/Documents/prep/smart-notebook/worker/db.py", line 10, in get_connection
+    return psycopg2.connect(
+           ^^^^^^^^^^^^^^^^^
+  File "/Users/shubham/Documents/prep/smart-notebook/.venv/lib/python3.12/site-packages/psycopg2/__init__.py", line 122, in connect
+    conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+psycopg2.OperationalError: connection to server at "localhost" (::1), port 58718 failed: Connection refused
+	Is the server running on that host and accepting TCP/IP connections?
+connection to server at "localhost" (127.0.0.1), port 58718 failed: Connection refused
+	Is the server running on that host and accepting TCP/IP connections?
+

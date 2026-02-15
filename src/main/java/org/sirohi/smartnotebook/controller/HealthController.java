@@ -17,11 +17,11 @@ import java.util.Map;
 @RequestMapping("/api")
 public class HealthController {
 
-    private final ModelGateway modelGateway;
+    private final org.sirohi.smartnotebook.gateway.GatewayFactory gatewayFactory;
     private final JdbcTemplate jdbc;
 
-    public HealthController(ModelGateway modelGateway, JdbcTemplate jdbc) {
-        this.modelGateway = modelGateway;
+    public HealthController(org.sirohi.smartnotebook.gateway.GatewayFactory gatewayFactory, JdbcTemplate jdbc) {
+        this.gatewayFactory = gatewayFactory;
         this.jdbc = jdbc;
     }
 
@@ -40,13 +40,21 @@ public class HealthController {
             health.put("status", "DEGRADED");
         }
 
-        // Ollama health
-        ModelHealth modelHealth = modelGateway.health();
-        health.put("ollama", Map.of(
-                "status", modelHealth.available() ? "UP" : "DOWN",
-                "model", modelHealth.model(),
-                "message", modelHealth.message()));
-        if (!modelHealth.available()) {
+        // Models health
+        Map<String, Object> modelsStatus = new LinkedHashMap<>();
+        boolean anyUp = false;
+        for (var gw : gatewayFactory.getAllGateways()) {
+            ModelHealth h = gw.health();
+            modelsStatus.put(h.provider(), Map.of(
+                    "status", h.available() ? "UP" : "DOWN",
+                    "model", h.model(),
+                    "message", h.message()));
+            if (h.available())
+                anyUp = true;
+        }
+        health.put("models", modelsStatus);
+
+        if (!anyUp && !modelsStatus.isEmpty()) {
             health.put("status", "DEGRADED");
         }
 

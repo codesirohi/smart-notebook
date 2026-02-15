@@ -1,37 +1,86 @@
 package org.sirohi.smartnotebook.config;
 
+import jakarta.annotation.PostConstruct;
 import org.sirohi.smartnotebook.model.ModelProvider;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Configuration propertis for LLM providers.
+ * Configuration properties for LLM providers.
  * Structure:
  * app.models:
- * openai:
- * api-key: ...
- * base-url: ...
- * enabled: true
+ * openai: ...
  * anthropic: ...
- * ...
+ * google: ...
+ * ollama: ...
  */
+@Configuration
 @Validated
 @ConfigurationProperties(prefix = "app.models")
 public class ModelConfig {
 
-    private Map<ModelProvider, ProviderConfig> providers = new HashMap<>();
-    private String defaultExtractionModel = "tinyllama"; // Default for ingestion
-    private String defaultEmbeddingModel = "all-minilm"; // Default for embeddings
+    private ProviderConfig openai;
+    private ProviderConfig anthropic;
+    private ProviderConfig google;
+    private ProviderConfig ollama;
+
+    private String defaultExtractionModel = "tinyllama";
+    private String defaultEmbeddingModel = "all-minilm";
+
+    // Internal map for programmatic access
+    private final Map<ModelProvider, ProviderConfig> providers = new HashMap<>();
+
+    @PostConstruct
+    public void initProviders() {
+        if (openai != null)
+            providers.put(ModelProvider.OPENAI, openai);
+        if (anthropic != null)
+            providers.put(ModelProvider.ANTHROPIC, anthropic);
+        if (google != null)
+            providers.put(ModelProvider.GOOGLE, google);
+        if (ollama != null)
+            providers.put(ModelProvider.OLLAMA, ollama);
+    }
 
     public Map<ModelProvider, ProviderConfig> getProviders() {
         return providers;
     }
 
-    public void setProviders(Map<ModelProvider, ProviderConfig> providers) {
-        this.providers = providers;
+    // Getters and Setters for binding
+    public ProviderConfig getOpenai() {
+        return openai;
+    }
+
+    public void setOpenai(ProviderConfig openai) {
+        this.openai = openai;
+    }
+
+    public ProviderConfig getAnthropic() {
+        return anthropic;
+    }
+
+    public void setAnthropic(ProviderConfig anthropic) {
+        this.anthropic = anthropic;
+    }
+
+    public ProviderConfig getGoogle() {
+        return google;
+    }
+
+    public void setGoogle(ProviderConfig google) {
+        this.google = google;
+    }
+
+    public ProviderConfig getOllama() {
+        return ollama;
+    }
+
+    public void setOllama(ProviderConfig ollama) {
+        this.ollama = ollama;
     }
 
     public String getDefaultExtractionModel() {
@@ -54,7 +103,7 @@ public class ModelConfig {
         private String apiKey;
         private String baseUrl;
         private boolean enabled = true;
-        private Map<String, String> models = new HashMap<>(); // Alias -> Model ID mapping if needed
+        private Map<String, String> models = new HashMap<>();
 
         public String getApiKey() {
             return apiKey;
