@@ -25,6 +25,7 @@ Smart Notebook is a knowledge base that organizes documents into **notebooks**, 
 - **Multi-LLM Support** — Vendor-agnostic design supporting **OpenAI**, **Anthropic**, **Gemini**, and **Ollama** (local) via `LLMFactory`
 - **Postgres-as-queue** — `SELECT FOR UPDATE SKIP LOCKED` for async task processing with exactly-once semantics
 - **Single-database architecture** — pgvector + relational data in one PostgreSQL instance for semantic search and filtering in the same query
+- **Cost-Optimized Architecture** — A tri-layer strategy (Ingestion, Retrieval, Inference) to minimize token usage and maximize performance on 8GB hardware.
 
 > For the full design rationale, architecture decisions, and implementation details, see [SMART_NOTEBOOK_BLUEPRINT.md](SMART_NOTEBOOK_BLUEPRINT.md).
 
@@ -175,9 +176,19 @@ smart-notebook/
 | **Phase 1.5** | Notebooks, Chats, Streaming | ✅ Complete |
 | **Phase 2** | Multi-Provider Support | ✅ Complete (OpenAI, Anthropic, Gemini, Ollama) |
 | **Phase 2.5** | Robust Ingestion (LangGraph) | ✅ Complete |
-| **Phase 3** | Evaluating Groundedness | Planned |
-| **Phase 4** | Agentic Workflows | Planned |
+| **Phase 3** | Evaluating Groundedness & Cost Optimization | Planned |
+| **Phase 4** | Agentic Workflows & Map-Reduce Ingestion | Planned |
 | **Phase 5** | Asymmetric RAG (Model Distillation) | Planned |
+
+### Cost Optimization Strategy (Planned)
+
+We are implementing a strict "Tri-Layer" optimization strategy to minimize cloud costs and run efficiently on local hardware:
+
+1.  **Storage Layer**: Map-Reduce summarization during ingestion to store dense knowledge, not raw fluff.
+2.  **Retrieval Layer**: Semantic Caching (stop repeated queries), HyDE (optimize precision), and Local Cross-Encoders (re-ranking).
+3.  **Inference Layer**: Dynamic Model Routing (simple queries -> small models), Prompt Compression, and Token-Efficient Output Syntax.
+
+*Detailed in [SMART_NOTEBOOK_BLUEPRINT.md#26-architectural-cost-optimization-strategy](SMART_NOTEBOOK_BLUEPRINT.md#26-architectural-cost-optimization-strategy)*
 
 ---
 
