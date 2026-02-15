@@ -207,8 +207,6 @@ We are implementing a strict "Tri-Layer" optimization strategy to minimize cloud
     *   **Yes.** The polyglot architecture separates the **API Tier** (Java IO-bound) from the **Inference Tier** (Python GPU-bound).
     *   **Production Path**: Swap internal components without rewriting code. Postgres Queue -> Kafka/SQS. Single Worker -> GPU Auto-Scaling Group.
 
-*See [SMART_NOTEBOOK_BLUEPRINT.md#29-lessons-learned-polyglot-microservices-for-ai](SMART_NOTEBOOK_BLUEPRINT.md#29-lessons-learned-polyglot-microservices-for-ai) for the deep dive.*
-
 ---
 
 ## License
