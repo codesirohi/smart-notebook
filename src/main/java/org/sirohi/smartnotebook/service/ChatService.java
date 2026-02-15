@@ -99,7 +99,8 @@ public class ChatService {
                                 request.content(),
                                 5,
                                 notebookDocIds,
-                                historyChronological);
+                                historyChronological,
+                                request.model());
                 long latencyMs = System.currentTimeMillis() - startTime;
 
                 // 5. Save the assistant response
@@ -159,7 +160,7 @@ public class ChatService {
                 // 4. Run streaming RAG query
                 long startTime = System.currentTimeMillis();
                 QueryService.StreamingQueryContext ctx = queryService.queryStreaming(
-                                request.content(), 5, notebookDocIds, historyChronological);
+                                request.content(), 5, notebookDocIds, historyChronological, request.model());
 
                 // 5. Build SSE event stream
                 StringBuilder fullResponse = new StringBuilder();

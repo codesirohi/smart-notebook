@@ -1,5 +1,6 @@
 package org.sirohi.smartnotebook.service;
 
+import org.sirohi.smartnotebook.config.ModelConfig;
 import org.sirohi.smartnotebook.dto.ChunkMatch;
 import org.sirohi.smartnotebook.dto.Citation;
 import org.sirohi.smartnotebook.dto.QueryResponse;
@@ -20,7 +21,8 @@ import java.util.UUID;
 @Service
 public class QueryService {
 
-        private final ModelGateway modelGateway;
+        private final GatewayFactory gatewayFactory;
+        private final ModelConfig modelConfig;
         private final VectorSearchRepository vectorSearch;
         private final QueryLogRepository queryLog;
 
@@ -38,10 +40,12 @@ public class QueryService {
                         Format citations as [Document: "title", Section: chunk_index].
                         """;
 
-        public QueryService(ModelGateway modelGateway,
+        public QueryService(GatewayFactory gatewayFactory,
+                        ModelConfig modelConfig,
                         VectorSearchRepository vectorSearch,
                         QueryLogRepository queryLog) {
-                this.modelGateway = modelGateway;
+                this.gatewayFactory = gatewayFactory;
+                this.modelConfig = modelConfig;
                 this.vectorSearch = vectorSearch;
                 this.queryLog = queryLog;
         }
@@ -49,9 +53,14 @@ public class QueryService {
         public QueryResponse query(String question, int topK, List<UUID> documentIds) {
                 long startTime = System.currentTimeMillis();
 
-                // 1. Embed the question
-                EmbeddingResponse questionEmbedding = modelGateway.embed(
-                                new EmbeddingRequest(question));
+                // 1. Embed the question using default embedding model
+                String embeddingModel = modelConfig.getDefaultEmbeddingModel();
+                // Get gateway for embedding model (usually Ollama/local for embeddings, but
+                // could be OpenAI)
+                ModelGateway embeddingGateway = gatewayFactory.getGatewayForModel(embeddingModel);
+
+                EmbeddingResponse questionEmbedding = embeddingGateway.embed(
+                                new EmbeddingRequest(question, embeddingModel));
 
                 // 2. Vector similarity search
                 List<ChunkMatch> matches = vectorSearch.findSimilar(
@@ -62,11 +71,16 @@ public class QueryService {
                 // 3. Build RAG context
                 String context = buildContext(matches);
 
-                // 4. Generate grounded answer
-                CompletionResponse completion = modelGateway.complete(
+                // 4. Generate grounded answer using default extraction/chat model if not
+                // specified
+                String chatModel = modelConfig.getDefaultExtractionModel();
+                ModelGateway chatGateway = gatewayFactory.getGatewayForModel(chatModel);
+
+                CompletionResponse completion = chatGateway.complete(
                                 new CompletionRequest(
                                                 RAG_SYSTEM_PROMPT,
-                                                buildUserPrompt(question, context)));
+                                                buildUserPrompt(question, context),
+                                                chatModel));
 
                 // 5. Extract citations
                 List<Citation> citations = matches.stream()
@@ -95,12 +109,16 @@ public class QueryService {
          */
         public QueryResponse queryWithHistory(String question, int topK,
                         List<UUID> documentIds,
-                        List<ChatMessage> conversationHistory) {
+                        List<ChatMessage> conversationHistory,
+                        String model) {
                 long startTime = System.currentTimeMillis();
 
                 // 1. Embed the question
-                EmbeddingResponse questionEmbedding = modelGateway.embed(
-                                new EmbeddingRequest(question));
+                String embeddingModel = modelConfig.getDefaultEmbeddingModel();
+                ModelGateway embeddingGateway = gatewayFactory.getGatewayForModel(embeddingModel);
+
+                EmbeddingResponse questionEmbedding = embeddingGateway.embed(
+                                new EmbeddingRequest(question, embeddingModel));
 
                 // 2. Vector similarity search
                 List<ChunkMatch> matches = vectorSearch.findSimilar(
@@ -115,10 +133,15 @@ public class QueryService {
                 String historyStr = buildConversationHistory(conversationHistory);
 
                 // 5. Generate grounded answer with conversation context
-                CompletionResponse completion = modelGateway.complete(
+                // Fallback to default model if null
+                String targetModel = model != null ? model : modelConfig.getDefaultExtractionModel();
+                ModelGateway chatGateway = gatewayFactory.getGatewayForModel(targetModel);
+
+                CompletionResponse completion = chatGateway.complete(
                                 new CompletionRequest(
                                                 RAG_SYSTEM_PROMPT,
-                                                buildConversationalPrompt(question, context, historyStr)));
+                                                buildConversationalPrompt(question, context, historyStr),
+                                                targetModel));
 
                 // 6. Extract citations
                 List<Citation> citations = matches.stream()
@@ -158,11 +181,15 @@ public class QueryService {
          */
         public StreamingQueryContext queryStreaming(String question, int topK,
                         List<UUID> documentIds,
-                        List<ChatMessage> conversationHistory) {
+                        List<ChatMessage> conversationHistory,
+                        String model) {
 
                 // 1. Embed the question (synchronous, ~100ms)
-                EmbeddingResponse questionEmbedding = modelGateway.embed(
-                                new EmbeddingRequest(question));
+                String embeddingModel = modelConfig.getDefaultEmbeddingModel();
+                ModelGateway embeddingGateway = gatewayFactory.getGatewayForModel(embeddingModel);
+
+                EmbeddingResponse questionEmbedding = embeddingGateway.embed(
+                                new EmbeddingRequest(question, embeddingModel));
 
                 // 2. Vector similarity search (synchronous, ~50ms)
                 List<ChunkMatch> matches = vectorSearch.findSimilar(
@@ -186,10 +213,14 @@ public class QueryService {
                                 .toList();
 
                 // 6. Stream LLM completion
-                Flux<String> tokenStream = modelGateway.completeStreaming(
+                String targetModel = model != null ? model : modelConfig.getDefaultExtractionModel();
+                ModelGateway chatGateway = gatewayFactory.getGatewayForModel(targetModel);
+
+                Flux<String> tokenStream = chatGateway.completeStreaming(
                                 new CompletionRequest(
                                                 RAG_SYSTEM_PROMPT,
-                                                buildConversationalPrompt(question, context, historyStr)));
+                                                buildConversationalPrompt(question, context, historyStr),
+                                                targetModel));
 
                 return new StreamingQueryContext(tokenStream, citations, computeConfidence(matches));
         }

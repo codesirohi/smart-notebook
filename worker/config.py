@@ -13,6 +13,12 @@ class Config:
     # Ollama
     ollama_url: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "phi3:mini")
+    extraction_model: str = os.getenv("EXTRACTION_MODEL", "phi3:mini")
+
+    # API Keys
+    openai_api_key: str = os.getenv("OPENAI_API_KEY")
+    anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY")
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY")
 
     # Worker
     poll_interval_sec: int = int(os.getenv("POLL_INTERVAL", "2"))

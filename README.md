@@ -92,12 +92,8 @@ make db-up
 # 3. Install Ollama model
 ollama pull phi3:mini
 
-# 4. Start the API (Terminal 1)
-make api
-
-# 5. Set up & start the worker (Terminal 2)
-make worker-setup
-make worker
+# 5. Start the App & Worker (Parallel)
+./dev.sh
 ```
 
 ### Verify
@@ -202,22 +198,22 @@ smart-notebook/
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/health` | System health (DB, Ollama, queue stats) |
+| `GET` | `/api/health` | System health (DB, Queue stats) |
+| `GET` | `/api/models` | LLM Provider connection status |
 
----
+### Configuration
 
-## Configuration
+Configuration is managed via `application.yml` and environment variables.
 
-Configuration is managed via `application.yml` with Spring profiles:
+| Variable | Description |
+|---|---|
+| `APP_MODELS_OPENAI_API_KEY` | OpenAI API Key |
+| `APP_MODELS_ANTHROPIC_API_KEY` | Anthropic API Key |
+| `APP_MODELS_GEMINI_API_KEY` | Google Gemini API Key |
+| `APP_MODELS_OLLAMA_BASE_URL` | Ollama URL (default: http://localhost:11434) |
+| `SPRING_DATASOURCE_URL` | PostgreSQL connection |
 
-| Variable | Description | Default |
-|---|---|---|
-| `OLLAMA_URL` | Ollama server URL | `http://localhost:11434` |
-| `OLLAMA_MODEL` | Model for embeddings + completions | `phi3:mini` |
-| `SPRING_DATASOURCE_URL` | PostgreSQL connection | `jdbc:postgresql://localhost:5432/smartnotebook` |
-| `APP_UPLOAD_DIR` | File storage directory | `./uploads` |
-
-Worker configuration is in `worker/.env.example`.
+Worker configuration is available in `worker/config.py` (uses same env vars).
 
 ---
 
@@ -244,7 +240,7 @@ See [SMART_NOTEBOOK_BLUEPRINT.md](SMART_NOTEBOOK_BLUEPRINT.md) for the full evol
 | Phase | Focus | Status |
 |---|---|---|
 | **Phase 1** | Upload → Ingest → Query with citations | ✅ Complete |
-| **Phase 1.5** | Multi-notebook organization, conversational chat, SSE streaming | 🚧 In Progress |
+| **Phase 1.5** | Multi-notebook organization, conversational chat, SSE streaming | ✅ Complete |
 | **Phase 2** | Hybrid search (BM25 + vector), reranking, multi-model routing | Planned |
 | **Phase 3** | Groundedness validation, evaluation framework, feedback loop | Planned |
 | **Phase 4** | Agentic RAG, multi-agent coordination, table/image understanding | Planned |

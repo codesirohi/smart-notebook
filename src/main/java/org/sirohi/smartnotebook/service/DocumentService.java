@@ -43,10 +43,15 @@ public class DocumentService {
     }
 
     public UploadResult uploadAndEnqueue(MultipartFile file, String title) {
-        return uploadAndEnqueue(file, title, DEFAULT_NOTEBOOK_ID);
+        return uploadAndEnqueue(file, title, DEFAULT_NOTEBOOK_ID, null, null);
     }
 
     public UploadResult uploadAndEnqueue(MultipartFile file, String title, UUID notebookId) {
+        return uploadAndEnqueue(file, title, notebookId, null, null);
+    }
+
+    public UploadResult uploadAndEnqueue(MultipartFile file, String title, UUID notebookId,
+            String extractionModel, String embeddingModel) {
         // 1. Compute checksum for dedup
         String checksum = computeSha256(file);
 
@@ -74,10 +79,16 @@ public class DocumentService {
         doc.setChecksum(checksum);
         doc.setNotebook(notebook);
         doc.setStatus("UPLOADED");
-        doc = documentRepo.save(doc);
+        doc = documentRepo.saveAndFlush(doc);
 
-        // 6. Enqueue ingestion task
-        UUID taskId = ingestionService.enqueue(doc);
+        // 6. Enqueue ingestion task with config overrides
+        java.util.Map<String, Object> config = new java.util.HashMap<>();
+        if (extractionModel != null)
+            config.put("extraction_model", extractionModel);
+        if (embeddingModel != null)
+            config.put("embedding_model", embeddingModel);
+
+        UUID taskId = ingestionService.enqueue(doc, config);
 
         return new UploadResult(doc.getId(), taskId);
     }

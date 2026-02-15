@@ -30,13 +30,17 @@ public class DocumentController {
     @PostMapping("/documents/upload")
     public ResponseEntity<UploadResponse> upload(
             @RequestParam("file") MultipartFile file,
-            @RequestParam("title") String title) {
+            @RequestParam("title") String title,
+            @RequestParam(value = "extractionModel", required = false) String extractionModel,
+            @RequestParam(value = "embeddingModel", required = false) String embeddingModel) {
 
         // Validate file
         validateFile(file);
 
         // Store document + enqueue task
-        UploadResult result = documentService.uploadAndEnqueue(file, title);
+        UploadResult result = documentService.uploadAndEnqueue(file, title,
+                java.util.UUID.fromString("00000000-0000-0000-0000-000000000001"), // Default notebook for now
+                extractionModel, embeddingModel);
 
         return ResponseEntity
                 .accepted()

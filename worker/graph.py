@@ -1,0 +1,166 @@
+import logging
+import time
+from langgraph.graph import StateGraph, END
+from state import IngestionState, Chunk
+from extractors import extract_text as extract_text_basic
+from extractors_v2 import extract_metadata
+from chunker import chunk_text
+from worker.llm_factory import LLMFactory
+# from ollama_client import OllamaClient # Deprecated in favor of LLMFactory
+from db import get_connection, store_chunks, update_document_status, complete_task, fail_task
+
+logger = logging.getLogger(__name__)
+from worker.config import config
+
+# --- Nodes ---
+
+def extract_node(state: IngestionState) -> IngestionState:
+    """Extract text and structured metadata."""
+    try:
+        source_path = state['source_path']
+        content_type = state['content_type']
+        
+        # 1. Basic Text Extraction (PyPDF2/Text/Markdown)
+        logger.info(f"Graph Node: Extracting text from {source_path}")
+        raw_text, basic_meta = extract_text_basic(source_path, content_type)
+        
+        if not raw_text or len(raw_text.strip()) < 10:
+            raise ValueError("Extracted text is empty or too short")
+            
+        # 2. Structured Metadata Extraction (LangExtract/LLM)
+        # Try to extract Title/Summary using Ollama
+        extraction_model = state['config'].get('extraction_model', config.extraction_model)
+        logger.info(f"Graph Node: Extracting structured metadata via LLM ({extraction_model})")
+        llm_meta = extract_metadata(raw_text, extraction_model)
+        
+        # Merge basic metadata with LLM metadata
+        final_meta = {**basic_meta, **llm_meta}
+        
+        return {
+            **state,
+            "raw_text": raw_text,
+            "metadata": final_meta,
+            "status": "EXTRACTED"
+        }
+    except Exception as e:
+        logger.error(f"Extraction failed: {e}")
+        return {**state, "errors": [str(e)], "status": "FAILED"}
+
+def chunk_node(state: IngestionState) -> IngestionState:
+    """Chunk the extracted text."""
+    if state["status"] == "FAILED":
+        return state
+        
+    try:
+        logger.info("Graph Node: Chunking text")
+        config = state["config"]
+        metadata = state["metadata"]
+        
+        chunks_obj = chunk_text(
+            state["raw_text"],
+            chunk_size=config.get('chunk_size', 512),
+            chunk_overlap=config.get('chunk_overlap', 50),
+            document_title=metadata.get('title', 'Untitled')
+        )
+        
+        if not chunks_obj:
+            raise ValueError("No chunks created")
+            
+        # Convert to simple dictionaries for state
+        chunks_list = []
+        for c in chunks_obj:
+            chunks_list.append({
+                "index": c.index,
+                "content": c.content,
+                "token_count": c.token_count,
+                "metadata": c.metadata
+            })
+            
+        return {**state, "chunks": chunks_list, "status": "CHUNKED"}
+        
+    except Exception as e:
+        logger.error(f"Chunking failed: {e}")
+        return {**state, "errors": [str(e)], "status": "FAILED"}
+
+def embed_node(state: IngestionState) -> IngestionState:
+    """Generate embeddings for chunks."""
+    if state["status"] == "FAILED":
+        return state
+        
+    try:
+        logger.info("Graph Node: Embedding chunks")
+        
+        # Determine embedding model from state config or default
+        model = state['config'].get('embedding_model', config.embedding_model)
+        
+        provider = LLMFactory.get_provider_for_model(model)
+        embeddings_model = LLMFactory.create_embeddings(provider, model)
+        
+        texts = [c["content"] for c in state["chunks"]]
+        embeddings = embeddings_model.embed_documents(texts)
+        
+        return {**state, "embeddings": embeddings, "status": "EMBEDDED"}
+        
+    except Exception as e:
+        logger.error(f"Embedding failed: {e}")
+        return {**state, "errors": [str(e)], "status": "FAILED"}
+
+def store_node(state: IngestionState) -> IngestionState:
+    """Store chunks and metadata to DB."""
+    if state["status"] == "FAILED":
+        return state
+        
+    try:
+        logger.info("Graph Node: Storing results")
+        conn = get_connection()
+        doc_id = state["document_id"]
+        
+        # Prepare chunk records
+        chunk_records = []
+        for i, chunk in enumerate(state["chunks"]):
+            embedding = state["embeddings"][i]
+            chunk_records.append({
+                'chunk_index': chunk["index"],
+                'content': chunk["content"],
+                'token_count': chunk["token_count"],
+                'embedding_str': f"[{','.join(str(x) for x in embedding)}]",
+                'metadata': chunk["metadata"]
+            })
+            
+        # Store chunks
+        store_chunks(conn, doc_id, chunk_records)
+        
+        # Update document with collected metadata
+        update_document_status(
+            conn, 
+            doc_id, 
+            "INDEXED", 
+            raw_content=state["raw_text"],
+            metadata=state["metadata"]
+        )
+        
+        conn.close()
+        return {**state, "status": "COMPLETED"}
+        
+    except Exception as e:
+        logger.error(f"Storage failed: {e}")
+        return {**state, "errors": [str(e)], "status": "FAILED"}
+
+# --- Graph Definition ---
+
+def create_ingestion_graph():
+    workflow = StateGraph(IngestionState)
+    
+    workflow.add_node("extract", extract_node)
+    workflow.add_node("chunk", chunk_node)
+    workflow.add_node("embed", embed_node)
+    workflow.add_node("store", store_node)
+    
+    workflow.set_entry_point("extract")
+    
+    workflow.add_edge("extract", "chunk")
+    workflow.add_edge("chunk", "embed")
+    workflow.add_edge("embed", "store")
+    workflow.add_edge("store", END)
+    
+    return workflow.compile()

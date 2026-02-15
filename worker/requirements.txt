@@ -3,3 +3,10 @@ requests==2.31.0
 PyPDF2==3.0.1
 pdfplumber==0.10.3
 python-dotenv==1.0.0
+langgraph
+langchain
+langchain-community
+langextract
+langchain-openai
+langchain-anthropic
+langchain-google-genai

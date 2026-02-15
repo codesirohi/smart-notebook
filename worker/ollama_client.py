@@ -34,13 +34,14 @@ class OllamaClient:
             logger.error(f"Cannot connect to Ollama at {self.base_url}")
             return False
 
-    def embed(self, text: str, retries: int = 3) -> list[float]:
+    def embed(self, text: str, model: str = None, retries: int = 3) -> list[float]:
         """Generate embedding for text using Ollama."""
+        target_model = model or self.model
         for attempt in range(retries):
             try:
                 resp = requests.post(
                     f"{self.base_url}/api/embeddings",
-                    json={"model": self.model, "prompt": text},
+                    json={"model": target_model, "prompt": text},
                     timeout=30
                 )
                 resp.raise_for_status()
@@ -61,13 +62,13 @@ class OllamaClient:
 
         raise RuntimeError(f"Ollama embedding failed after {retries} retries")
 
-    def embed_batch(self, texts: list[str], batch_size: int = 10) -> list[list[float]]:
+    def embed_batch(self, texts: list[str], batch_size: int = 10, model: str = None) -> list[list[float]]:
         """Embed multiple texts with progress logging."""
         embeddings = []
         total = len(texts)
 
         for i, text in enumerate(texts):
-            embedding = self.embed(text)
+            embedding = self.embed(text, model=model)
             embeddings.append(embedding)
 
             if (i + 1) % batch_size == 0 or i == total - 1:

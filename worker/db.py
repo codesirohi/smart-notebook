@@ -149,10 +149,16 @@ def store_chunks(conn, document_id, chunks: list[dict]):
                 Json(chunk.get('metadata', {}))
             ))
 
-def update_document_status(conn, document_id, status, raw_content=None):
-    """Update document status and optionally store extracted text."""
+def update_document_status(conn, document_id, status, raw_content=None, metadata=None):
+    """Update document status and optionally store extracted text and metadata."""
     with get_cursor(conn) as cur:
-        if raw_content:
+        if raw_content and metadata:
+            cur.execute("""
+                UPDATE documents
+                SET status = %s, raw_content = %s, metadata = %s, updated_at = NOW()
+                WHERE id = %s
+            """, (status, raw_content, Json(metadata), document_id))
+        elif raw_content:
             cur.execute("""
                 UPDATE documents
                 SET status = %s, raw_content = %s, updated_at = NOW()

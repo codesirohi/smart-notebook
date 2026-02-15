@@ -2,9 +2,10 @@ package org.sirohi.smartnotebook.gateway;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.sirohi.smartnotebook.config.ModelConfig;
+import org.sirohi.smartnotebook.model.ModelProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -19,11 +20,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Ollama-based ModelGateway for local development (Phase 1).
+ * Ollama-based ModelGateway for local development.
  * Uses RestTemplate for blocking calls and WebClient for streaming.
  */
 @Component
-@Profile("local")
 public class OllamaModelGateway implements ModelGateway {
 
     private final RestTemplate restTemplate;
@@ -31,15 +31,21 @@ public class OllamaModelGateway implements ModelGateway {
     private final String baseUrl;
     private final String defaultModel;
     private final ObjectMapper objectMapper;
+    private final ModelConfig.ProviderConfig providerConfig;
 
     private static final Logger log = LoggerFactory.getLogger(OllamaModelGateway.class);
 
-    public OllamaModelGateway(
-            @Value("${ollama.base-url:http://localhost:11434}") String baseUrl,
-            @Value("${ollama.model:phi3:mini}") String defaultModel) {
-        this.baseUrl = baseUrl;
-        this.defaultModel = defaultModel;
-        this.objectMapper = new ObjectMapper();
+    public OllamaModelGateway(ModelConfig modelConfig, ObjectMapper objectMapper) {
+        this.providerConfig = modelConfig.getProviders().get(ModelProvider.OLLAMA);
+        this.objectMapper = objectMapper;
+
+        this.baseUrl = (providerConfig != null && providerConfig.getBaseUrl() != null)
+                ? providerConfig.getBaseUrl()
+                : "http://localhost:11434";
+
+        // Fallback to configured default extraction model if specific ollama model
+        // aliases aren't set
+        this.defaultModel = modelConfig.getDefaultExtractionModel();
 
         // Blocking HTTP client for non-streaming calls
         var factory = new SimpleClientHttpRequestFactory();
@@ -53,12 +59,21 @@ public class OllamaModelGateway implements ModelGateway {
                 .build();
     }
 
+    private boolean isEnabled() {
+        return providerConfig == null || providerConfig.isEnabled();
+    }
+
     @Override
     public CompletionResponse complete(CompletionRequest request) {
+        if (!isEnabled())
+            throw new ModelGatewayException("Ollama provider is disabled");
+
         long start = System.currentTimeMillis();
 
+        String model = request.model() != null ? request.model() : defaultModel;
+
         Map<String, Object> body = new HashMap<>();
-        body.put("model", defaultModel);
+        body.put("model", model);
         body.put("prompt", request.userPrompt());
         body.put("stream", false);
         if (request.systemPrompt() != null) {
@@ -77,7 +92,7 @@ public class OllamaModelGateway implements ModelGateway {
                     text,
                     0, 0, // Ollama doesn't return token counts in basic mode
                     latency,
-                    defaultModel);
+                    model);
         } catch (RestClientException e) {
             throw new ModelGatewayException("Ollama completion failed: " + e.getMessage(), e);
         }
@@ -90,8 +105,13 @@ public class OllamaModelGateway implements ModelGateway {
      */
     @Override
     public Flux<String> completeStreaming(CompletionRequest request) {
+        if (!isEnabled())
+            return Flux.error(new ModelGatewayException("Ollama provider is disabled"));
+
+        String model = request.model() != null ? request.model() : defaultModel;
+
         Map<String, Object> body = new HashMap<>();
-        body.put("model", defaultModel);
+        body.put("model", model);
         body.put("prompt", request.userPrompt());
         body.put("stream", true);
         if (request.systemPrompt() != null) {
@@ -127,6 +147,9 @@ public class OllamaModelGateway implements ModelGateway {
 
     @Override
     public EmbeddingResponse embed(EmbeddingRequest request) {
+        if (!isEnabled())
+            throw new ModelGatewayException("Ollama provider is disabled");
+
         long start = System.currentTimeMillis();
 
         String model = request.model() != null ? request.model() : defaultModel;
@@ -158,6 +181,8 @@ public class OllamaModelGateway implements ModelGateway {
     @Override
     @SuppressWarnings("unchecked")
     public ModelHealth health() {
+        if (!isEnabled())
+            return new ModelHealth(false, "ollama", defaultModel, "Disabled");
         try {
             restTemplate.getForObject(baseUrl + "/api/tags", Map.class);
             return new ModelHealth(true, "ollama", defaultModel, "Connected");

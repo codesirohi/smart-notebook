@@ -81,13 +81,15 @@ def run_worker():
     reaper_thread.start()
     logger.info("Stale task reaper started (background thread)")
 
-    # Initialize processor
-    processor = DocumentProcessor()
+    # Initialize Graph
+    from graph import create_ingestion_graph
+    ingestion_graph = create_ingestion_graph()
+    logger.info("Ingestion Graph compiled")
 
     conn = get_connection()
     consecutive_empty = 0
 
-    logger.info("Worker ready. Polling for tasks...")
+    logger.info("Worker ready. Polling for tasks (Agentic Mode)...")
 
     while not shutdown_event.is_set():
         try:
@@ -107,26 +109,46 @@ def run_worker():
             consecutive_empty = 0
             task_id = task['id']
             doc_id = task['document_id']
+            payload = task['payload']
 
             logger.info(f"Claimed task {task_id} (document: {doc_id})")
 
             try:
-                # Process the document
-                result, chunk_records, raw_text = processor.process(task)
+                # Prepare initial state
+                # Merge payload config with defaults
+                base_config = {"chunk_size": 512, "chunk_overlap": 50}
+                if 'config' in payload and isinstance(payload['config'], dict):
+                    base_config.update(payload['config'])
 
-                # Store chunks in database
-                store_chunks(conn, str(doc_id), chunk_records)
+                initial_state = {
+                    "document_id": str(doc_id),
+                    "source_path": payload.get('source_path'),
+                    "content_type": payload.get('content_type', 'text/plain'),
+                    "config": base_config,
+                    "status": "PENDING",
+                    "metadata": {},
+                    "chunks": [],
+                    "embeddings": [],
+                    "errors": []
+                }
 
-                # Update document with extracted text
-                update_document_status(conn, str(doc_id), 'INDEXED', raw_text)
+                # Run Graph
+                logger.info(f"Invoking Ingestion Graph for {doc_id}...")
+                start_time = time.time()
+                final_state = ingestion_graph.invoke(initial_state)
+                duration = int((time.time() - start_time) * 1000)
 
-                # Mark task complete
-                complete_task(conn, task_id, result)
-
-                logger.info(
-                    f"Task {task_id} completed: "
-                    f"{result['chunks_created']} chunks in {result['processing_time_ms']}ms"
-                )
+                if final_state["status"] == "COMPLETED":
+                    result = {
+                        "status": "COMPLETED",
+                        "chunks_created": len(final_state["chunks"]),
+                        "processing_time_ms": duration,
+                        "metadata_extracted": True
+                    }
+                    complete_task(conn, task_id, result)
+                    logger.info(f"Task {task_id} completed in {duration}ms")
+                else:
+                    raise RuntimeError(f"Graph failed: {final_state.get('errors')}")
 
             except Exception as e:
                 logger.error(f"Task {task_id} failed: {e}", exc_info=True)

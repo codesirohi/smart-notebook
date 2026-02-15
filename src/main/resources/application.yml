@@ -46,9 +46,21 @@ app:
     history-window: 10  # Number of recent messages to include in RAG context
 
 # Ollama config
-ollama:
-  base-url: ${OLLAMA_URL:http://localhost:11434}
-  model: ${OLLAMA_MODEL:phi3:mini}
+  models:
+    default-extraction-model: ${EXTRACTION_MODEL:tinyllama}
+    default-embedding-model: ${EMBEDDING_MODEL:all-minilm}
+    ollama:
+      base-url: ${OLLAMA_URL:http://localhost:11434}
+      enabled: true
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      enabled: true
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY:}
+      enabled: true
+    google:
+      api-key: ${GEMINI_API_KEY:}
+      enabled: true
 
 # Actuator
 management:

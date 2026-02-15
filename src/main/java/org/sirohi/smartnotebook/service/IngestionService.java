@@ -28,17 +28,25 @@ public class IngestionService {
         this.objectMapper = objectMapper;
     }
 
-    public UUID enqueue(Document doc) {
+    public UUID enqueue(Document doc, Map<String, Object> configOverride) {
         UUID taskId = UUID.randomUUID();
+
+        Map<String, Object> config = new java.util.HashMap<>();
+        config.put("chunk_size", 512);
+        config.put("chunk_overlap", 50);
+        // Default embedding model will be overridden by worker config if not present
+        // here
+        // But if user provides one, it takes precedence.
+
+        if (configOverride != null) {
+            config.putAll(configOverride);
+        }
 
         Map<String, Object> payload = Map.of(
                 "document_id", doc.getId().toString(),
                 "source_path", doc.getFilePath(),
                 "content_type", doc.getContentType(),
-                "config", Map.of(
-                        "chunk_size", 512,
-                        "chunk_overlap", 50,
-                        "embedding_model", "phi3:mini"));
+                "config", config);
 
         jdbc.update("""
                 INSERT INTO ingestion_tasks (id, document_id, payload)
