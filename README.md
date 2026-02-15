@@ -177,6 +177,7 @@ smart-notebook/
 | **Phase 2** | Multi-Provider Support | ✅ Complete (OpenAI, Anthropic, Gemini, Ollama) |
 | **Phase 2.5** | Robust Ingestion (LangGraph) | ✅ Complete |
 | **Phase 3** | Evaluating Groundedness & Cost Optimization | Planned |
+| **Phase 3.5** | User Feedback Loop & Recursive Indexing | Planned |
 | **Phase 4** | Agentic Workflows & Map-Reduce Ingestion | Planned |
 | **Phase 5** | Asymmetric RAG (Model Distillation) | Planned |
 
@@ -188,7 +189,25 @@ We are implementing a strict "Tri-Layer" optimization strategy to minimize cloud
 2.  **Retrieval Layer**: Semantic Caching (stop repeated queries), HyDE (optimize precision), and Local Cross-Encoders (re-ranking).
 3.  **Inference Layer**: Dynamic Model Routing (simple queries -> small models), Prompt Compression, and Token-Efficient Output Syntax.
 
-*Detailed in [SMART_NOTEBOOK_BLUEPRINT.md#26-architectural-cost-optimization-strategy](SMART_NOTEBOOK_BLUEPRINT.md#26-architectural-cost-optimization-strategy)*
+
+
+### Key Learnings: Why This Architecture?
+
+> We evaluated simpler stacks (e.g., Python Flask wrappers) but chose a polyglot, multi-stage pipeline for specific reasons:
+
+1.  **Why not a simple Flask RAG service?**
+    *   **Memory**: An always-on Flask server eats 150MB+ RAM idle. Our CLI worker uses **0MB** idle.
+    *   **Async vs Sync**: Flask encourages blocking HTTP calls. Our Postgres-queue design handles heavy re-ranking (3s+) without blocking the API.
+
+2.  **Why "Advanced" RAG?**
+    *   **Naive RAG fails** on vague queries ("pricing?"). We use **HyDE** (Hypothetical Document Embeddings) to bridge the semantic gap.
+    *   **Bi-Encoders aren't enough**. We use a second-stage **Cross-Encoder** to re-rank results, tripling precision for technical queries.
+
+3.  **Does this scale to heavy traffic?**
+    *   **Yes.** The polyglot architecture separates the **API Tier** (Java IO-bound) from the **Inference Tier** (Python GPU-bound).
+    *   **Production Path**: Swap internal components without rewriting code. Postgres Queue -> Kafka/SQS. Single Worker -> GPU Auto-Scaling Group.
+
+*See [SMART_NOTEBOOK_BLUEPRINT.md#29-lessons-learned-polyglot-microservices-for-ai](SMART_NOTEBOOK_BLUEPRINT.md#29-lessons-learned-polyglot-microservices-for-ai) for the deep dive.*
 
 ---
 
