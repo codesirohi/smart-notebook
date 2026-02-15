@@ -14,6 +14,16 @@ public interface ModelGateway {
     CompletionResponse complete(CompletionRequest request);
 
     /**
+     * Stream text completion token-by-token.
+     * Returns a Flux that emits individual tokens as they are generated.
+     * Default implementation falls back to non-streaming complete().
+     */
+    default reactor.core.publisher.Flux<String> completeStreaming(CompletionRequest request) {
+        CompletionResponse response = complete(request);
+        return reactor.core.publisher.Flux.just(response.text());
+    }
+
+    /**
      * Generate vector embedding for text.
      * Used for document chunks and query embedding.
      */

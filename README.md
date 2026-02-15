@@ -62,6 +62,7 @@ Smart Notebook is a knowledge base that organizes documents into **notebooks**, 
 | Component | Technology | Purpose |
 |---|---|---|
 | API Server | Spring Boot 3.4.3 + Java 21 | REST API, query orchestration, health checks |
+| Streaming | Spring WebFlux + Project Reactor | SSE token streaming for chat responses |
 | Ingestion Worker | Python 3.12 | Text extraction, chunking, embedding generation |
 | Database | PostgreSQL 16 + pgvector | Documents, task queue, vector embeddings |
 | LLM Provider | Ollama (local) | Embeddings + completions via `ModelGateway` |
@@ -125,6 +126,11 @@ curl -X POST http://localhost:8080/api/notebooks/{notebookId}/chats \
 curl -X POST http://localhost:8080/api/chats/{chatId}/messages \
   -H "Content-Type: application/json" \
   -d '{"content": "What are the key findings?"}'
+
+# Stream chat response (SSE — token-by-token)
+curl -N -X POST http://localhost:8080/api/chats/{chatId}/messages/stream \
+  -H "Content-Type: application/json" \
+  -d '{"content": "Tell me more about that"}'
 ```
 
 ---
@@ -188,7 +194,8 @@ smart-notebook/
 | `POST` | `/api/notebooks/{id}/chats` | Start a new chat |
 | `GET` | `/api/notebooks/{id}/chats` | List chats in a notebook |
 | `GET` | `/api/chats/{chatId}` | Get chat with message history |
-| `POST` | `/api/chats/{chatId}/messages` | Send a message (RAG query) |
+| `POST` | `/api/chats/{chatId}/messages` | Send a message (blocking) |
+| `POST` | `/api/chats/{chatId}/messages/stream` | Send a message (SSE streaming) |
 | `DELETE` | `/api/chats/{chatId}` | Delete a chat |
 
 ### System
@@ -237,7 +244,7 @@ See [SMART_NOTEBOOK_BLUEPRINT.md](SMART_NOTEBOOK_BLUEPRINT.md) for the full evol
 | Phase | Focus | Status |
 |---|---|---|
 | **Phase 1** | Upload → Ingest → Query with citations | ✅ Complete |
-| **Phase 1.5** | Multi-notebook organization, conversational chat | 🚧 In Progress |
+| **Phase 1.5** | Multi-notebook organization, conversational chat, SSE streaming | 🚧 In Progress |
 | **Phase 2** | Hybrid search (BM25 + vector), reranking, multi-model routing | Planned |
 | **Phase 3** | Groundedness validation, evaluation framework, feedback loop | Planned |
 | **Phase 4** | Agentic RAG, multi-agent coordination, table/image understanding | Planned |

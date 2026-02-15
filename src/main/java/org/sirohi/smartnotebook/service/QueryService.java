@@ -8,6 +8,7 @@ import org.sirohi.smartnotebook.model.ChatMessage;
 import org.sirohi.smartnotebook.repository.QueryLogRepository;
 import org.sirohi.smartnotebook.repository.VectorSearchRepository;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 
 import java.util.List;
 import java.util.UUID;
@@ -138,6 +139,59 @@ public class QueryService {
                                 citations,
                                 computeConfidence(matches),
                                 latencyMs);
+        }
+
+        /**
+         * Context holder for streaming queries. Contains pre-computed citations
+         * and the token stream — ChatService uses this to build SSE events.
+         */
+        public record StreamingQueryContext(
+                        Flux<String> tokenStream,
+                        List<Citation> citations,
+                        double confidence) {
+        }
+
+        /**
+         * Streaming RAG query with conversation history.
+         * Embedding + vector search run synchronously (fast), then the LLM
+         * completion streams token-by-token via the returned Flux.
+         */
+        public StreamingQueryContext queryStreaming(String question, int topK,
+                        List<UUID> documentIds,
+                        List<ChatMessage> conversationHistory) {
+
+                // 1. Embed the question (synchronous, ~100ms)
+                EmbeddingResponse questionEmbedding = modelGateway.embed(
+                                new EmbeddingRequest(question));
+
+                // 2. Vector similarity search (synchronous, ~50ms)
+                List<ChunkMatch> matches = vectorSearch.findSimilar(
+                                questionEmbedding.vector(),
+                                topK,
+                                documentIds);
+
+                // 3. Build RAG context
+                String context = buildContext(matches);
+
+                // 4. Build conversation history
+                String historyStr = buildConversationHistory(conversationHistory);
+
+                // 5. Extract citations (pre-computed before streaming starts)
+                List<Citation> citations = matches.stream()
+                                .map(m -> new Citation(
+                                                m.documentTitle(),
+                                                m.chunkIndex(),
+                                                m.content(),
+                                                m.similarity()))
+                                .toList();
+
+                // 6. Stream LLM completion
+                Flux<String> tokenStream = modelGateway.completeStreaming(
+                                new CompletionRequest(
+                                                RAG_SYSTEM_PROMPT,
+                                                buildConversationalPrompt(question, context, historyStr)));
+
+                return new StreamingQueryContext(tokenStream, citations, computeConfidence(matches));
         }
 
         private String buildContext(List<ChunkMatch> matches) {
