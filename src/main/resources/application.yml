@@ -1,6 +1,8 @@
 spring:
   application:
     name: smart-notebook
+  profiles:
+    active: local
 
   datasource:
     url: jdbc:postgresql://localhost:5432/smartnotebook
@@ -24,6 +26,13 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+
+  docker:
+    compose:
+      lifecycle-management: start-and-stop   # stop containers on shutdown, don't remove them
+      stop:
+        command: stop                         # 'stop' preserves containers + volumes; 'down' removes containers
+        timeout: 30s                          # graceful shutdown wait before SIGKILL
 
 # Application config
 app:
