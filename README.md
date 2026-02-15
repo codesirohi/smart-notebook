@@ -164,7 +164,8 @@ smart-notebook/
 
 ## Roadmap
 
-See [SMART_NOTEBOOK_BLUEPRINT.md](SMART_NOTEBOOK_BLUEPRINT.md) for detailed architecture.
+
+
 
 | Phase | Focus | Status |
 |---|---|---|
