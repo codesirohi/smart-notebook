@@ -157,7 +157,7 @@ smart-notebook/
 │   └── config.py            # Configuration
 ├── docker-compose.yml       # PostgreSQL + pgvector
 ├── Makefile                 # Dev commands
-└── SMART_NOTEBOOK_BLUEPRINT.md  # Detailed design document
+
 ```
 
 ---
