@@ -88,89 +88,127 @@ def run_worker():
 
     conn = get_connection()
     consecutive_empty = 0
+    max_workers = config.max_workers if hasattr(config, 'max_workers') else 3
+    
+    logger.info(f"Worker ready. Polling for tasks (Concurrency: {max_workers})...")
 
-    logger.info("Worker ready. Polling for tasks (Agentic Mode)...")
-
-    while not shutdown_event.is_set():
+    from concurrent.futures import ThreadPoolExecutor
+    
+    def process_task(task):
+        """
+        Process a single task in a separate thread.
+        Each thread needs its own DB connection for safety.
+        """
+        task_id = task['id']
+        doc_id = task['document_id']
+        payload = task['payload']
+        
+        # Determine worker ID for logging context
+        logger.info(f"Thread starting task {task_id} (doc: {doc_id})")
+        
+        thread_conn = None
         try:
-            # Claim next task
-            task = claim_task(conn, config.worker_id)
+            thread_conn = get_connection()
+            
+            # Prepare initial state
+            base_config = {"chunk_size": 512, "chunk_overlap": 50}
+            if 'config' in payload and isinstance(payload['config'], dict):
+                base_config.update(payload['config'])
 
-            if not task:
-                consecutive_empty += 1
-                if consecutive_empty == 1:
-                    logger.debug("No pending tasks. Waiting...")
-                elif consecutive_empty % 30 == 0:
-                    logger.info("Still waiting for tasks...")
+            initial_state = {
+                "document_id": str(doc_id),
+                "source_path": payload.get('source_path'),
+                "content_type": payload.get('content_type', 'text/plain'),
+                "config": base_config,
+                "status": "PENDING",
+                "metadata": {},
+                "chunks": [],
+                "embeddings": [],
+                "errors": []
+            }
 
-                shutdown_event.wait(config.poll_interval_sec)
-                continue
+            # Run Graph
+            logger.info(f"Invoking Ingestion Graph for {doc_id}...")
+            start_time = time.time()
+            final_state = ingestion_graph.invoke(initial_state)
+            duration = int((time.time() - start_time) * 1000)
 
-            consecutive_empty = 0
-            task_id = task['id']
-            doc_id = task['document_id']
-            payload = task['payload']
-
-            logger.info(f"Claimed task {task_id} (document: {doc_id})")
-
-            try:
-                # Prepare initial state
-                # Merge payload config with defaults
-                base_config = {"chunk_size": 512, "chunk_overlap": 50}
-                if 'config' in payload and isinstance(payload['config'], dict):
-                    base_config.update(payload['config'])
-
-                initial_state = {
-                    "document_id": str(doc_id),
-                    "source_path": payload.get('source_path'),
-                    "content_type": payload.get('content_type', 'text/plain'),
-                    "config": base_config,
-                    "status": "PENDING",
-                    "metadata": {},
-                    "chunks": [],
-                    "embeddings": [],
-                    "errors": []
+            if final_state["status"] == "COMPLETED":
+                result = {
+                    "status": "COMPLETED",
+                    "chunks_created": len(final_state["chunks"]),
+                    "processing_time_ms": duration,
+                    "metadata_extracted": True
                 }
-
-                # Run Graph
-                logger.info(f"Invoking Ingestion Graph for {doc_id}...")
-                start_time = time.time()
-                final_state = ingestion_graph.invoke(initial_state)
-                duration = int((time.time() - start_time) * 1000)
-
-                if final_state["status"] == "COMPLETED":
-                    result = {
-                        "status": "COMPLETED",
-                        "chunks_created": len(final_state["chunks"]),
-                        "processing_time_ms": duration,
-                        "metadata_extracted": True
-                    }
-                    complete_task(conn, task_id, result)
-                    logger.info(f"Task {task_id} completed in {duration}ms")
-                else:
-                    raise RuntimeError(f"Graph failed: {final_state.get('errors')}")
-
-            except Exception as e:
-                logger.error(f"Task {task_id} failed: {e}", exc_info=True)
-
-                error_details = {
-                    "exception_type": type(e).__name__,
-                    "message": str(e),
-                    "worker_id": config.worker_id
-                }
-
-                fail_task(conn, task_id, str(e), error_details)
-                update_document_status(conn, str(doc_id), 'FAILED')
+                complete_task(thread_conn, task_id, result)
+                logger.info(f"Task {task_id} completed in {duration}ms")
+            else:
+                raise RuntimeError(f"Graph failed: {final_state.get('errors')}")
 
         except Exception as e:
-            logger.error(f"Worker loop error: {e}", exc_info=True)
+            logger.error(f"Task {task_id} failed: {e}", exc_info=True)
+            error_details = {
+                "exception_type": type(e).__name__,
+                "message": str(e),
+                "worker_id": config.worker_id
+            }
+            if thread_conn:
+                fail_task(thread_conn, task_id, str(e), error_details)
+                update_document_status(thread_conn, str(doc_id), 'FAILED')
+        finally:
+            if thread_conn:
+                try: 
+                    thread_conn.close() 
+                except: 
+                    pass
+
+    # Main Executor Loop
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = set()
+        
+        while not shutdown_event.is_set():
             try:
-                conn.close()
-            except:
-                pass
-            time.sleep(5)
-            conn = get_connection()
-            logger.info("Database reconnected")
+                # Clean up completed futures
+                done = {f for f in futures if f.done()}
+                futures -= done
+                
+                # If pool is full, wait a bit
+                if len(futures) >= max_workers:
+                    time.sleep(0.5)
+                    continue
+
+                # Claim next task
+                task = claim_task(conn, config.worker_id)
+
+                if not task:
+                    consecutive_empty += 1
+                    if consecutive_empty == 1:
+                        logger.debug("No pending tasks. Waiting...")
+                    elif consecutive_empty % 30 == 0:
+                        logger.info(f"Still waiting... (Active threads: {len(futures)})")
+
+                    # If no tasks, sleep efficiently but check for shutdown
+                    # Only sleep long if we really have nothing to do
+                    wait_time = config.poll_interval_sec if len(futures) == 0 else 1.0
+                    shutdown_event.wait(wait_time)
+                    continue
+
+                consecutive_empty = 0
+                logger.info(f"Claimed task {task['id']}, submitting to pool (Active: {len(futures)})")
+                
+                # Submit task to pool
+                future = executor.submit(process_task, task)
+                futures.add(future)
+
+            except Exception as e:
+                logger.error(f"Worker loop error: {e}", exc_info=True)
+                try:
+                    conn.close()
+                except:
+                    pass
+                time.sleep(5)
+                conn = get_connection()
+                logger.info("Database reconnected")
 
     logger.info("Worker shut down gracefully")
     conn.close()

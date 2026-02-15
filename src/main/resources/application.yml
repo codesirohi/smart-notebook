@@ -3,6 +3,9 @@ spring:
     name: smart-notebook
   profiles:
     active: local
+  threads:
+    virtual:
+      enabled: true
 
   datasource:
     url: jdbc:postgresql://localhost:5432/smartnotebook

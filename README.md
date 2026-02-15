@@ -17,6 +17,8 @@ Smart Notebook is a knowledge base that organizes documents into **notebooks**, 
 
 **Key architectural choices:**
 
+- **High-Concurrency Design** — Java 21 Virtual Threads for high-throughput I/O + Python ThreadPool worker for parallel ingestion
+
 - **Multi-notebook isolation** — Each notebook is an independent knowledge workspace with its own documents and chat threads
 - **LangGraph Ingestion Pipeline** — Robust, state-machine driven document processing (Extract → Chunk → Embed → Store) with error handling
 - **Polyglot design** — Java API (Spring Boot) + Python ingestion worker, each using the language best suited to its role
@@ -69,9 +71,9 @@ Smart Notebook is a knowledge base that organizes documents into **notebooks**, 
 
 | Component | Technology | Purpose |
 |---|---|---|
-| API Server | Spring Boot 3.4.3 + Java 21 | REST API, query orchestration, health checks |
+| API Server | Spring Boot 3.4.3 + Java 21 (Virtual Threads) | REST API, query orchestration, health checks |
 | Streaming | Spring WebFlux + Project Reactor | SSE token streaming for chat responses |
-| Ingestion Worker | Python 3.12 + LangGraph | Reliable, state-driven document processing pipeline |
+| Ingestion Worker | Python 3.12 + ThreadPoolExecutor | Reliable, parallel document processing pipeline |
 | AI / ML | LangChain + LLMFactory | Abstraction for OpenAI, Anthropic, Gemini, Ollama |
 | Database | PostgreSQL 16 + pgvector | Documents, task queue, vector embeddings, chat history |
 | Migrations | Flyway | Schema versioning (V1-V11) |
