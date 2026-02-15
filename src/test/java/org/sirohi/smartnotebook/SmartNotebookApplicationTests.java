@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 
-@Disabled("Blocked by Spring AI 2.0.0-M2 bug: ClassNotFoundException org.springframework.core.retry.RetryTemplate")
+@Disabled("Requires running Postgres and Ollama — enable for integration testing")
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
 class SmartNotebookApplicationTests {
