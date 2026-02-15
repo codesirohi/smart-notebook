@@ -175,6 +175,7 @@ smart-notebook/
 | **Phase 2.5** | Robust Ingestion (LangGraph) | ✅ Complete |
 | **Phase 3** | Evaluating Groundedness | Planned |
 | **Phase 4** | Agentic Workflows | Planned |
+| **Phase 5** | Asymmetric RAG (Model Distillation) | Planned |
 
 ---
 
