@@ -16,6 +16,7 @@ import java.util.*;
 
 @RestController
 @RequestMapping("/api")
+@CrossOrigin(origins = "http://localhost:5173")
 public class DocumentController {
 
     private final DocumentService documentService;
@@ -59,6 +60,7 @@ public class DocumentController {
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("documents", docs.getContent());
+        response.put("content", docs.getContent()); // Alias for standard Spring Page
         response.put("totalElements", docs.getTotalElements());
         response.put("totalPages", docs.getTotalPages());
         response.put("currentPage", docs.getNumber());

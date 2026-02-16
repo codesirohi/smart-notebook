@@ -19,6 +19,7 @@ import java.util.*;
 
 @RestController
 @RequestMapping("/api/notebooks")
+@CrossOrigin(origins = "http://localhost:5173")
 public class NotebookController {
 
     private final NotebookService notebookService;
@@ -93,6 +94,7 @@ public class NotebookController {
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("documents", docs.getContent());
+        response.put("content", docs.getContent()); // Alias for standard Spring Page
         response.put("totalElements", docs.getTotalElements());
         response.put("totalPages", docs.getTotalPages());
         response.put("currentPage", docs.getNumber());

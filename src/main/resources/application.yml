@@ -28,7 +28,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
-    open-in-view: false
+    open-in-view: true
 
   docker:
     compose:
