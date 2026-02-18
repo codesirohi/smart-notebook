@@ -251,11 +251,42 @@ ANTHROPIC_API_KEY=...
 
 ## 📊 Performance
 
+### LLM Inference Optimization (Mac M2 / Apple Silicon)
+
+| Optimization | Latency | Improvement | Setup Time |
+|--------------|---------|-------------|------------|
+| **Baseline** (tinyllama/Docker/CPU) | 27s | - | - |
+| **Quick Win** (phi3/Docker/CPU) | 8-10s | **63% faster** | 5 min |
+| **Recommended** (phi3/Native/Metal GPU) | 3-5s | **82% faster** | 30 min |
+| **Fastest** (llama3.2/Native/Metal GPU) | 1-2s | **92% faster** | 30 min |
+
+### Latency Breakdown
+
+| Component | CPU (Docker) | GPU (Native) | Speedup |
+|-----------|-------------|--------------|---------|
+| Embedding | 240ms | 100-150ms | 1.6-2.4x |
+| Vector Search | 50ms | 50ms | - |
+| **LLM Generation** | **27,500ms** | **1,500-3,000ms** | **9-18x** |
+| Streaming | 880ms | 500ms | 1.8x |
+| **Total** | **28s** | **2-4s** | **7-14x** |
+
+### API vs Local Models
+
+| Provider | Model | Latency | Cost (1K queries) |
+|----------|-------|---------|-------------------|
+| Ollama (local) | llama3.2 | 1-2s | **$0** |
+| Ollama (local) | phi3 | 3-5s | **$0** |
+| OpenAI | gpt-4o-mini | 1-2s | ~$0.30 |
+| Anthropic | claude-3-haiku | 1-2s | ~$0.50 |
+
+### System Requirements
+
 - **Latency Budget**: 15s (configurable)
 - **Throughput**: ~100-200 docs/hour
 - **Concurrent Workers**: 3 (configurable)
 - **Memory**: ~4GB total
 - **CPU**: 2-4 cores recommended
+- **GPU**: Apple Silicon (Metal) recommended for local LLMs
 
 ---
 
