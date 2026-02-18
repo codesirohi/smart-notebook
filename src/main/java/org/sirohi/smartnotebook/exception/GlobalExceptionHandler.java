@@ -39,6 +39,21 @@ public class GlobalExceptionHandler {
                         "AI model is not available. Please try again later."));
     }
 
+    @ExceptionHandler(QuotaExceededException.class)
+    public ResponseEntity<QuotaExceededResponse> handleQuotaExceeded(QuotaExceededException e) {
+        log.warn("Quota exceeded for {}: {}", e.getProviderName(), e.getLimitType());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("X-RateLimit-Reset", e.getResetAt() != null ? e.getResetAt().toString() : "")
+                .header("X-RateLimit-Limit-Type", e.getLimitType())
+                .body(new QuotaExceededResponse(
+                        "QUOTA_EXCEEDED",
+                        e.getMessage(),
+                        e.getProviderName(),
+                        e.getLimitType(),
+                        e.getResetAt()
+                ));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(Exception e) {
         log.error("Unexpected error occurred", e);
@@ -47,5 +62,14 @@ public class GlobalExceptionHandler {
     }
 
     public record ErrorResponse(String code, String message) {
+    }
+
+    public record QuotaExceededResponse(
+            String code,
+            String message,
+            String provider,
+            String limitType,
+            java.time.OffsetDateTime resetAt
+    ) {
     }
 }

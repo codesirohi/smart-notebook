@@ -41,6 +41,10 @@ spring:
 app:
   upload-dir: ${user.dir}/uploads
 
+  # Security - API key encryption (generate with: openssl rand -base64 32)
+  security:
+    encryption-key: ${MODEL_ENCRYPTION_KEY:}
+
   query:
     default-top-k: 5
     max-top-k: 20

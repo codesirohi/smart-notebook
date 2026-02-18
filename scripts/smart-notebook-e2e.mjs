@@ -103,6 +103,7 @@ function printSummary(summary, overallPass) {
   console.log(`query confidence: ${summary.queryConfidence ?? 'N/A'}`);
   console.log(`number of citations: ${summary.citationCount ?? 'N/A'}`);
   console.log(`duplicate-upload test result: ${summary.duplicateUploadResult}`);
+  console.log(`model management tests: ${summary.modelManagementResult ?? 'NOT_RUN'}`);
   console.log('===============================================\n');
 }
 
@@ -129,6 +130,7 @@ export async function runSmartNotebookE2E(config = {}) {
     queryConfidence: null,
     citationCount: 0,
     duplicateUploadResult: 'NOT_RUN',
+    modelManagementResult: 'NOT_RUN',
   };
 
   let overallPass = false;
@@ -378,6 +380,95 @@ export async function runSmartNotebookE2E(config = {}) {
     } catch (error) {
       rememberFailure(error);
     }
+
+    // ─── D) Model Management Tests ───
+    let modelMgmtPassed = 0;
+    let modelMgmtTotal = 5;
+
+    try {
+      await runStep('D1) List local models', async () => {
+        const models = await request(`${baseUrl}/models/local`, { method: 'GET' }, [200]);
+
+        if (!Array.isArray(models.body)) {
+          throw new Error(`status=200, body=${safeStringify(models.body)}`);
+        }
+
+        modelMgmtPassed++;
+        return { detail: `count=${models.body.length}` };
+      });
+    } catch (error) {
+      rememberFailure(error);
+    }
+
+    try {
+      await runStep('D2) List providers', async () => {
+        const providers = await request(`${baseUrl}/providers`, { method: 'GET' }, [200]);
+
+        if (!Array.isArray(providers.body)) {
+          throw new Error(`status=200, body=${safeStringify(providers.body)}`);
+        }
+
+        const providerNames = providers.body.map((p) => p.providerName).join(', ');
+        modelMgmtPassed++;
+        return { detail: `providers=[${providerNames}]` };
+      });
+    } catch (error) {
+      rememberFailure(error);
+    }
+
+    try {
+      await runStep('D3) Get global pipeline config', async () => {
+        const config = await request(`${baseUrl}/pipeline-config`, { method: 'GET' }, [200]);
+
+        const body = config.body;
+        if (typeof body !== 'object' || body === null) {
+          throw new Error(`status=200, body=${safeStringify(body)}`);
+        }
+
+        const extraction = body.extraction?.modelName || 'none';
+        const embedding = body.embedding?.modelName || 'none';
+        const chat = body.chat?.modelName || 'none';
+        modelMgmtPassed++;
+        return { detail: `extraction=${extraction}, embedding=${embedding}, chat=${chat}` };
+      });
+    } catch (error) {
+      rememberFailure(error);
+    }
+
+    try {
+      await runStep('D4) Get quotas', async () => {
+        const quotas = await request(`${baseUrl}/quotas`, { method: 'GET' }, [200]);
+
+        if (!Array.isArray(quotas.body)) {
+          throw new Error(`status=200, body=${safeStringify(quotas.body)}`);
+        }
+
+        modelMgmtPassed++;
+        return { detail: `count=${quotas.body.length}` };
+      });
+    } catch (error) {
+      rememberFailure(error);
+    }
+
+    try {
+      await runStep('D5) Get hardware info', async () => {
+        const hardware = await request(`${baseUrl}/models/local/hardware`, { method: 'GET' }, [200]);
+
+        const body = hardware.body;
+        if (typeof body !== 'object' || body === null) {
+          throw new Error(`status=200, body=${safeStringify(body)}`);
+        }
+
+        const ram = body.totalRamGb || 'unknown';
+        const tier = body.recommendedTier || 'unknown';
+        modelMgmtPassed++;
+        return { detail: `ram=${ram}GB, tier=${tier}` };
+      });
+    } catch (error) {
+      rememberFailure(error);
+    }
+
+    summary.modelManagementResult = `${modelMgmtPassed}/${modelMgmtTotal} passed`;
 
     if (firstFailure) {
       throw firstFailure;
