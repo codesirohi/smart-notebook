@@ -9,28 +9,41 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
     @ExceptionHandler(BadRequestException.class)
     public ResponseEntity<ErrorResponse> handleBadRequest(BadRequestException e) {
+        log.warn("Bad request: {}", e.getMessage());
         return ResponseEntity.badRequest()
                 .body(new ErrorResponse("BAD_REQUEST", e.getMessage()));
     }
 
     @ExceptionHandler(DuplicateDocumentException.class)
     public ResponseEntity<ErrorResponse> handleDuplicate(DuplicateDocumentException e) {
+        log.warn("Duplicate document: {}", e.getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ErrorResponse("DUPLICATE_DOCUMENT", e.getMessage()));
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<Void> handleNotFound(ResourceNotFoundException e) {
+        log.warn("Resource not found: {}", e.getMessage());
         return ResponseEntity.notFound().build();
     }
 
     @ExceptionHandler(ModelGatewayException.class)
     public ResponseEntity<ErrorResponse> handleModelError(ModelGatewayException e) {
+        log.error("Model gateway error", e);
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(new ErrorResponse("MODEL_UNAVAILABLE",
                         "AI model is not available. Please try again later."));
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponse> handleGenericException(Exception e) {
+        log.error("Unexpected error occurred", e);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(new ErrorResponse("INTERNAL_ERROR", "An unexpected error occurred."));
     }
 
     public record ErrorResponse(String code, String message) {

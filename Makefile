@@ -58,3 +58,10 @@ status: ## Show status of all services
 clean: ## Clean build artifacts
 	./mvnw clean
 	rm -rf uploads/
+
+# ─── Utils ───
+kill-port: ## Kill process on port 8080
+	./kill_port.sh
+
+stop: ## Stop all services (App, Worker, Docker)
+	./stop.sh

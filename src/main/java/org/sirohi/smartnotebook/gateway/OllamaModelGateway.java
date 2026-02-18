@@ -71,6 +71,7 @@ public class OllamaModelGateway implements ModelGateway {
         long start = System.currentTimeMillis();
 
         String model = request.model() != null ? request.model() : defaultModel;
+        log.debug("Ollama completion request for model: {}", model);
 
         Map<String, Object> body = new HashMap<>();
         body.put("model", model);
@@ -79,6 +80,7 @@ public class OllamaModelGateway implements ModelGateway {
         if (request.systemPrompt() != null) {
             body.put("system", request.systemPrompt());
         }
+        body.put("options", buildOllamaOptions(request.parameters()));
 
         try {
             @SuppressWarnings("unchecked")
@@ -87,6 +89,7 @@ public class OllamaModelGateway implements ModelGateway {
 
             long latency = System.currentTimeMillis() - start;
             String text = (String) response.get("response");
+            log.debug("Ollama completion finished in {}ms", latency);
 
             return new CompletionResponse(
                     text,
@@ -94,6 +97,7 @@ public class OllamaModelGateway implements ModelGateway {
                     latency,
                     model);
         } catch (RestClientException e) {
+            log.error("Ollama completion failed", e);
             throw new ModelGatewayException("Ollama completion failed: " + e.getMessage(), e);
         }
     }
@@ -109,6 +113,7 @@ public class OllamaModelGateway implements ModelGateway {
             return Flux.error(new ModelGatewayException("Ollama provider is disabled"));
 
         String model = request.model() != null ? request.model() : defaultModel;
+        log.debug("Ollama streaming completion request for model: {}", model);
 
         Map<String, Object> body = new HashMap<>();
         body.put("model", model);
@@ -117,6 +122,7 @@ public class OllamaModelGateway implements ModelGateway {
         if (request.systemPrompt() != null) {
             body.put("system", request.systemPrompt());
         }
+        body.put("options", buildOllamaOptions(request.parameters()));
 
         return webClient.post()
                 .uri("/api/generate")
@@ -129,6 +135,7 @@ public class OllamaModelGateway implements ModelGateway {
                         String token = node.has("response") ? node.get("response").asText() : "";
                         boolean done = node.has("done") && node.get("done").asBoolean();
                         if (done) {
+                            log.debug("Ollama streaming finished");
                             // Emit last token (if any) and complete
                             return token.isEmpty() ? Flux.empty() : Flux.just(token);
                         }
@@ -153,6 +160,7 @@ public class OllamaModelGateway implements ModelGateway {
         long start = System.currentTimeMillis();
 
         String model = request.model() != null ? request.model() : defaultModel;
+        log.debug("Ollama embedding request for model: {}, text length: {}", model, request.text().length());
 
         Map<String, Object> body = Map.of(
                 "model", model,
@@ -171,9 +179,11 @@ public class OllamaModelGateway implements ModelGateway {
             }
 
             long latency = System.currentTimeMillis() - start;
+            log.debug("Ollama embedding finished in {}ms", latency);
 
             return new EmbeddingResponse(vector, vector.length, latency, model);
         } catch (RestClientException e) {
+            log.error("Ollama embedding failed", e);
             throw new ModelGatewayException("Ollama embedding failed: " + e.getMessage(), e);
         }
     }
@@ -194,5 +204,39 @@ public class OllamaModelGateway implements ModelGateway {
     @Override
     public String providerId() {
         return "ollama";
+    }
+
+    private Map<String, Object> buildOllamaOptions(Map<String, Object> parameters) {
+        Map<String, Object> options = new HashMap<>();
+
+        // Prevent chat role hallucinations in plain completion endpoint.
+        options.put("stop", List.of("User:", "Assistant:"));
+
+        if (parameters == null || parameters.isEmpty()) {
+            return options;
+        }
+
+        copyOption(parameters, options, "num_predict");
+        copyOption(parameters, options, "temperature");
+        copyOption(parameters, options, "top_p");
+        copyOption(parameters, options, "top_k");
+
+        Object rawNested = parameters.get("options");
+        if (rawNested instanceof Map<?, ?> nested) {
+            nested.forEach((k, v) -> {
+                if (k != null && v != null) {
+                    options.put(String.valueOf(k), v);
+                }
+            });
+        }
+
+        return options;
+    }
+
+    private void copyOption(Map<String, Object> from, Map<String, Object> to, String key) {
+        Object value = from.get(key);
+        if (value != null) {
+            to.put(key, value);
+        }
     }
 }

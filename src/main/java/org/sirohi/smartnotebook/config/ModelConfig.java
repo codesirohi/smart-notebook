@@ -1,7 +1,7 @@
 package org.sirohi.smartnotebook.config;
 
 import jakarta.annotation.PostConstruct;
-import org.sirohi.smartnotebook.model.ModelProvider;
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.validation.annotation.Validated;
@@ -23,64 +23,17 @@ import java.util.Map;
 @ConfigurationProperties(prefix = "app.models")
 public class ModelConfig {
 
-    private ProviderConfig openai;
-    private ProviderConfig anthropic;
-    private ProviderConfig google;
-    private ProviderConfig ollama;
+    private final Map<String, ProviderConfig> providers = new HashMap<>();
 
     private String defaultExtractionModel = "tinyllama";
-    private String defaultEmbeddingModel = "all-minilm";
+    private String defaultEmbeddingModel = "nomic-embed-text";
 
-    // Internal map for programmatic access
-    private final Map<ModelProvider, ProviderConfig> providers = new HashMap<>();
-
-    @PostConstruct
-    public void initProviders() {
-        if (openai != null)
-            providers.put(ModelProvider.OPENAI, openai);
-        if (anthropic != null)
-            providers.put(ModelProvider.ANTHROPIC, anthropic);
-        if (google != null)
-            providers.put(ModelProvider.GOOGLE, google);
-        if (ollama != null)
-            providers.put(ModelProvider.OLLAMA, ollama);
-    }
-
-    public Map<ModelProvider, ProviderConfig> getProviders() {
+    public Map<String, ProviderConfig> getProviders() {
         return providers;
     }
 
-    // Getters and Setters for binding
-    public ProviderConfig getOpenai() {
-        return openai;
-    }
-
-    public void setOpenai(ProviderConfig openai) {
-        this.openai = openai;
-    }
-
-    public ProviderConfig getAnthropic() {
-        return anthropic;
-    }
-
-    public void setAnthropic(ProviderConfig anthropic) {
-        this.anthropic = anthropic;
-    }
-
-    public ProviderConfig getGoogle() {
-        return google;
-    }
-
-    public void setGoogle(ProviderConfig google) {
-        this.google = google;
-    }
-
-    public ProviderConfig getOllama() {
-        return ollama;
-    }
-
-    public void setOllama(ProviderConfig ollama) {
-        this.ollama = ollama;
+    public ProviderConfig getProvider(String name) {
+        return providers.get(name);
     }
 
     public String getDefaultExtractionModel() {

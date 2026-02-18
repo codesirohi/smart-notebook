@@ -1,0 +1,130 @@
+name: E2E Smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/**"
+      - "worker/**"
+      - "scripts/**"
+      - "pom.xml"
+      - "docker-compose.yml"
+      - ".github/workflows/e2e-smoke.yml"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_DOCKER_COMPOSE_ENABLED: "false"
+      SMART_NOTEBOOK_BASE_URL: http://localhost:8080/api
+      E2E_QUERY_LATENCY_BUDGET_MS: "15000"
+      E2E_ENFORCE_LATENCY_BUDGET: "false"
+      READINESS_TIMEOUT_MS: "180000"
+      READINESS_POLL_INTERVAL_MS: "2000"
+      LOG_FORMAT: json
+      LOG_LEVEL: INFO
+      EXTRACTION_MODEL: tinyllama
+      EMBEDDING_MODEL: nomic-embed-text
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Start Docker dependencies
+        run: docker compose up -d postgres redis ollama
+
+      - name: Wait for dependency readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in {1..90}; do
+            if curl -fsS http://localhost:11434/api/tags >/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+          docker compose ps
+
+      - name: Pull Ollama models
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec sn-ollama ollama pull tinyllama
+          docker exec sn-ollama ollama pull nomic-embed-text
+
+      - name: Install worker dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install --upgrade pip
+          pip install -r worker/requirements.txt
+
+      - name: Start worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          . .venv/bin/activate
+          python -u worker/worker.py > worker-ci.log 2>&1 &
+          echo $! > worker.pid
+          sleep 2
+          if ! kill -0 "$(cat worker.pid)" 2>/dev/null; then
+            echo "Worker failed to start"
+            tail -n 200 worker-ci.log || true
+            exit 1
+          fi
+
+      - name: Start backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./mvnw spring-boot:run -Dspring-boot.run.profiles=local \
+            -Dspring-boot.run.jvmArguments="-Dspring.devtools.restart.enabled=false -Dspring.devtools.livereload.enabled=false" \
+            > app-ci.log 2>&1 &
+          echo $! > app.pid
+
+      - name: Wait for app + worker readiness
+        run: node scripts/wait-for-ready.mjs
+
+      - name: Run E2E smoke
+        run: node scripts/smart-notebook-e2e.mjs
+
+      - name: Dump logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          echo "===== app-ci.log ====="
+          tail -n 300 app-ci.log || true
+          echo "===== worker-ci.log ====="
+          tail -n 300 worker-ci.log || true
+          echo "===== docker compose ps ====="
+          docker compose ps || true
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          if [ -f app.pid ]; then kill "$(cat app.pid)" 2>/dev/null || true; fi
+          if [ -f worker.pid ]; then kill "$(cat worker.pid)" 2>/dev/null || true; fi
+          docker compose down -v || true

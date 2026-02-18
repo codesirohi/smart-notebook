@@ -135,7 +135,6 @@
                     <source>21</source>
                     <target>21</target>
                     <fork>true</fork>
-                    <executable>/opt/homebrew/opt/openjdk@21/bin/javac</executable>
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.projectlombok</groupId>
@@ -159,9 +158,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>
-                    <jvm>/opt/homebrew/opt/openjdk@21/bin/java</jvm>
-                </configuration>
             </plugin>
         </plugins>
     </build>

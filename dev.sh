@@ -11,6 +11,8 @@ cleanup() {
     echo ""
     echo "🛑 Stopping Smart Notebook environment..."
     kill $(jobs -p) 2>/dev/null
+    echo "🐳 Stopping Docker containers..."
+    docker compose down
     wait
     echo "✅ All services stopped."
 }
@@ -37,6 +39,7 @@ WORKER_PID=$!
 # 3. Start Spring Boot App in foreground
 echo "☕ [App] Starting Spring Boot application..."
 # Use -Dspring-boot.run.profiles=local to ensure local profile is active
+./kill_port.sh
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
 
 # Wait for cleanup (mvnw usually blocks, but if it exits, we cleanup)

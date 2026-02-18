@@ -3,7 +3,7 @@ package org.sirohi.smartnotebook.gateway;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.sirohi.smartnotebook.config.ModelConfig;
-import org.sirohi.smartnotebook.model.ModelProvider;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -26,7 +26,7 @@ public class GeminiGateway implements ModelGateway {
     private static final Logger log = LoggerFactory.getLogger(GeminiGateway.class);
 
     public GeminiGateway(ModelConfig modelConfig, ObjectMapper objectMapper) {
-        this.config = modelConfig.getProviders().get(ModelProvider.GOOGLE);
+        this.config = modelConfig.getProvider("google");
         this.objectMapper = objectMapper;
 
         String baseUrl = (config != null && config.getBaseUrl() != null)

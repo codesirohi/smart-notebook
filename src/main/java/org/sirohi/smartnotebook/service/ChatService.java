@@ -20,6 +20,8 @@ import java.util.*;
 @Transactional
 public class ChatService {
 
+        private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ChatService.class);
+
         private final ChatRepository chatRepo;
         private final ChatMessageRepository messageRepo;
         private final DocumentRepository documentRepo;
@@ -47,11 +49,13 @@ public class ChatService {
                 chat.setNotebook(notebook);
                 chat.setTitle(request.title() != null ? request.title() : "New Chat");
                 chat = chatRepo.save(chat);
+                log.info("Created new chat: {} for notebook: {}", chat.getId(), notebookId);
                 return toChatResponse(chat, List.of());
         }
 
         @Transactional(readOnly = true)
         public List<ChatResponse> listChats(UUID notebookId) {
+                log.debug("Listing chats for notebook: {}", notebookId);
                 List<Chat> chats = chatRepo.findByNotebookId(notebookId,
                                 Sort.by(Sort.Direction.DESC, "updatedAt"));
                 return chats.stream()
@@ -61,6 +65,7 @@ public class ChatService {
 
         @Transactional(readOnly = true)
         public ChatResponse getChatWithHistory(UUID chatId) {
+                log.debug("Getting chat history for: {}", chatId);
                 Chat chat = chatRepo.findById(chatId)
                                 .orElseThrow(() -> new ResourceNotFoundException("Chat not found: " + chatId));
                 List<ChatMessage> messages = messageRepo.findByChatIdOrderByCreatedAtAsc(chatId);
@@ -72,6 +77,7 @@ public class ChatService {
          * notebook's documents and includes conversation history for context.
          */
         public ChatMessageResponse sendMessage(UUID chatId, ChatMessageRequest request) {
+                log.info("Processing message for chat: {}", chatId);
                 Chat chat = chatRepo.findById(chatId)
                                 .orElseThrow(() -> new ResourceNotFoundException("Chat not found: " + chatId));
 
@@ -88,20 +94,29 @@ public class ChatService {
                 // Reverse to chronological order
                 List<ChatMessage> historyChronological = new ArrayList<>(recentHistory);
                 Collections.reverse(historyChronological);
+                log.debug("Loaded {} history messages for context", historyChronological.size());
 
                 // 3. Get document IDs scoped to this notebook
                 UUID notebookId = chat.getNotebook().getId();
                 List<UUID> notebookDocIds = documentRepo.findIdsByNotebookId(notebookId);
+                log.debug("Found {} documents in notebook: {}", notebookDocIds.size(), notebookId);
 
                 // 4. Run conversation-aware RAG query
                 long startTime = System.currentTimeMillis();
-                QueryResponse ragResponse = queryService.queryWithHistory(
-                                request.content(),
-                                5,
-                                notebookDocIds,
-                                historyChronological,
-                                request.model());
+                QueryResponse ragResponse;
+                try {
+                        ragResponse = queryService.queryWithHistory(
+                                        request.content(),
+                                        5,
+                                        notebookDocIds,
+                                        historyChronological,
+                                        request.model());
+                } catch (Exception e) {
+                        log.error("RAG query failed for chat: {}", chatId, e);
+                        throw e;
+                }
                 long latencyMs = System.currentTimeMillis() - startTime;
+                log.info("RAG query completed in {}ms with confidence: {}", latencyMs, ragResponse.confidence());
 
                 // 5. Save the assistant response
                 ChatMessage assistantMessage = new ChatMessage();
@@ -124,6 +139,7 @@ public class ChatService {
         }
 
         public void deleteChat(UUID chatId) {
+                log.info("Deleting chat: {}", chatId);
                 if (!chatRepo.existsById(chatId)) {
                         throw new ResourceNotFoundException("Chat not found: " + chatId);
                 }
@@ -137,6 +153,7 @@ public class ChatService {
          */
         public reactor.core.publisher.Flux<org.springframework.http.codec.ServerSentEvent<ChatTokenEvent>> sendMessageStreaming(
                         UUID chatId, ChatMessageRequest request) {
+                log.info("Starting streaming message for chat: {}", chatId);
                 Chat chat = chatRepo.findById(chatId)
                                 .orElseThrow(() -> new ResourceNotFoundException("Chat not found: " + chatId));
 
@@ -146,18 +163,22 @@ public class ChatService {
                 userMessage.setRole("user");
                 userMessage.setContent(request.content());
                 messageRepo.save(userMessage);
+                log.debug("Saved user message");
 
                 // 2. Load recent conversation history
                 List<ChatMessage> recentHistory = messageRepo.findByChatIdOrderByCreatedAtDesc(
                                 chatId, org.springframework.data.domain.PageRequest.of(0, historyWindow));
                 List<ChatMessage> historyChronological = new ArrayList<>(recentHistory);
                 Collections.reverse(historyChronological);
+                log.debug("Loaded history: {} messages", historyChronological.size());
 
                 // 3. Get document IDs scoped to this notebook
                 UUID notebookId = chat.getNotebook().getId();
                 List<UUID> notebookDocIds = documentRepo.findIdsByNotebookId(notebookId);
+                log.debug("RAG Context: {} documents", notebookDocIds.size());
 
                 // 4. Run streaming RAG query
+                log.info("Initiating streaming RAG query...");
                 long startTime = System.currentTimeMillis();
                 QueryService.StreamingQueryContext ctx = queryService.queryStreaming(
                                 request.content(), 5, notebookDocIds, historyChronological, request.model());
@@ -175,6 +196,8 @@ public class ChatService {
                                 })
                                 .concatWith(reactor.core.publisher.Mono.fromCallable(() -> {
                                         long latencyMs = System.currentTimeMillis() - startTime;
+                                        log.info("Streaming completed in {}ms. Response length: {}", latencyMs,
+                                                        fullResponse.length());
 
                                         // Save assistant message with full response
                                         ChatMessage assistantMessage = new ChatMessage();
@@ -187,6 +210,7 @@ public class ChatService {
                                                         "latencyMs", latencyMs,
                                                         "citationCount", ctx.citations().size()));
                                         messageRepo.save(assistantMessage);
+                                        log.debug("Saved full assistant response to DB");
 
                                         // Update chat timestamp
                                         chat.setUpdatedAt(java.time.OffsetDateTime.now());

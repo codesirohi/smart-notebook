@@ -5,12 +5,12 @@ from state import IngestionState, Chunk
 from extractors import extract_text as extract_text_basic
 from extractors_v2 import extract_metadata
 from chunker import chunk_text
-from worker.llm_factory import LLMFactory
+from llm_factory import LLMFactory
 # from ollama_client import OllamaClient # Deprecated in favor of LLMFactory
 from db import get_connection, store_chunks, update_document_status, complete_task, fail_task
 
 logger = logging.getLogger(__name__)
-from worker.config import config
+from config import config
 
 # --- Nodes ---
 

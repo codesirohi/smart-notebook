@@ -19,6 +19,8 @@ import java.util.*;
 @CrossOrigin(origins = "http://localhost:5173")
 public class DocumentController {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(DocumentController.class);
+
     private final DocumentService documentService;
     private final IngestionService ingestionService;
 
@@ -32,16 +34,22 @@ public class DocumentController {
     public ResponseEntity<UploadResponse> upload(
             @RequestParam("file") MultipartFile file,
             @RequestParam("title") String title,
+            @RequestParam(value = "notebookId", required = false) UUID notebookId,
             @RequestParam(value = "extractionModel", required = false) String extractionModel,
             @RequestParam(value = "embeddingModel", required = false) String embeddingModel) {
+
+        log.info("Received upload request for file: {}, size: {}, title: {}", file.getOriginalFilename(),
+                file.getSize(), title);
 
         // Validate file
         validateFile(file);
 
         // Store document + enqueue task
         UploadResult result = documentService.uploadAndEnqueue(file, title,
-                java.util.UUID.fromString("00000000-0000-0000-0000-000000000001"), // Default notebook for now
+                notebookId,
                 extractionModel, embeddingModel);
+
+        log.info("Document accepted. ID: {}, Task ID: {}", result.documentId(), result.taskId());
 
         return ResponseEntity
                 .accepted()
@@ -55,6 +63,7 @@ public class DocumentController {
     public ResponseEntity<Map<String, Object>> listDocuments(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
+        log.debug("Listing documents. Page: {}, Size: {}", page, size);
 
         Page<Document> docs = documentService.listDocuments(page, size);
 
@@ -70,6 +79,7 @@ public class DocumentController {
 
     @GetMapping("/documents/{id}")
     public ResponseEntity<Document> getDocument(@PathVariable UUID id) {
+        log.debug("Retrieving document: {}", id);
         return documentService.findById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -77,6 +87,7 @@ public class DocumentController {
 
     @GetMapping("/tasks/{taskId}/status")
     public ResponseEntity<TaskStatusResponse> getTaskStatus(@PathVariable UUID taskId) {
+        // log.debug("Checking task status: {}", taskId); // Verbose, maybe debug only
         return ingestionService.getStatus(taskId)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());

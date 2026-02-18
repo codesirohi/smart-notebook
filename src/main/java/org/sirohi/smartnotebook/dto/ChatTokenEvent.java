@@ -11,15 +11,21 @@ public record ChatTokenEvent(
         boolean done,
         List<Citation> citations,
         double confidence,
-        long latencyMs) {
+        long latencyMs,
+        String error) {
 
     /** Factory for intermediate token events. */
     public static ChatTokenEvent token(String token) {
-        return new ChatTokenEvent(token, false, List.of(), 0.0, 0);
+        return new ChatTokenEvent(token, false, List.of(), 0.0, 0, null);
     }
 
     /** Factory for the final completion event with metadata. */
     public static ChatTokenEvent done(List<Citation> citations, double confidence, long latencyMs) {
-        return new ChatTokenEvent("", true, citations, confidence, latencyMs);
+        return new ChatTokenEvent("", true, citations, confidence, latencyMs, null);
+    }
+
+    /** Factory for error events. */
+    public static ChatTokenEvent error(String message) {
+        return new ChatTokenEvent(null, true, List.of(), 0.0, 0, message);
     }
 }

@@ -20,4 +20,6 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
 
     @Query("SELECT d.id FROM Document d WHERE d.notebook.id = :notebookId")
     List<UUID> findIdsByNotebookId(UUID notebookId);
+
+    List<Document> findAllByNotebookId(UUID notebookId);
 }

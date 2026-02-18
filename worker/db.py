@@ -1,13 +1,42 @@
 import psycopg2
 from psycopg2.extras import RealDictCursor, Json
+from psycopg2.pool import ThreadedConnectionPool
 from contextlib import contextmanager
 from config import config
 import logging
+import atexit
 
 logger = logging.getLogger(__name__)
 
-def get_connection():
-    return psycopg2.connect(
+# ─── Connection Pool ───
+# Interview Note: ThreadedConnectionPool prevents connection exhaustion under load.
+# Each worker thread gets a connection from the pool instead of creating new ones.
+# Pool size matches max_workers to avoid blocking on connection acquisition.
+
+_connection_pool = None
+
+def init_connection_pool(min_conn=1, max_conn=10):
+    """
+    Initialize the connection pool. Call this once at worker startup.
+
+    Args:
+        min_conn: Minimum number of connections to maintain
+        max_conn: Maximum number of connections (should match worker max_workers)
+
+    Interview Note: Connection pooling is a production best practice because:
+    1. Reduces connection overhead (TCP handshake, auth, etc.)
+    2. Prevents connection exhaustion under concurrent load
+    3. Provides connection reuse and efficient resource management
+    """
+    global _connection_pool
+    if _connection_pool is not None:
+        logger.warning("Connection pool already initialized")
+        return
+
+    logger.info(f"Initializing connection pool (min={min_conn}, max={max_conn})")
+    _connection_pool = ThreadedConnectionPool(
+        minconn=min_conn,
+        maxconn=max_conn,
         host=config.db_host,
         port=config.db_port,
         dbname=config.db_name,
@@ -15,8 +44,58 @@ def get_connection():
         password=config.db_password
     )
 
+    # Ensure pool is closed on exit
+    atexit.register(close_connection_pool)
+    logger.info("Connection pool initialized successfully")
+
+def close_connection_pool():
+    """Close all connections in the pool. Called automatically on exit."""
+    global _connection_pool
+    if _connection_pool is not None:
+        logger.info("Closing connection pool")
+        _connection_pool.closeall()
+        _connection_pool = None
+
+def get_connection():
+    """
+    Get a connection from the pool.
+
+    Returns:
+        psycopg2 connection object
+
+    Raises:
+        RuntimeError: If pool is not initialized
+
+    Interview Note: This uses ThreadedConnectionPool.getconn() which is thread-safe.
+    If all connections are in use, this will block until one becomes available.
+    """
+    if _connection_pool is None:
+        raise RuntimeError("Connection pool not initialized. Call init_connection_pool() first.")
+    return _connection_pool.getconn()
+
+def return_connection(conn):
+    """
+    Return a connection to the pool for reuse.
+
+    Args:
+        conn: Connection to return to pool
+
+    Interview Note: Always return connections to avoid pool exhaustion.
+    Use try/finally blocks or context managers to ensure cleanup.
+    """
+    if _connection_pool is not None and conn is not None:
+        _connection_pool.putconn(conn)
+
 @contextmanager
 def get_cursor(conn, commit=True):
+    """
+    Context manager for database cursors with automatic commit/rollback.
+
+    Interview Note: This pattern ensures:
+    1. Automatic transaction management (commit on success, rollback on error)
+    2. Cursor cleanup (close cursor in finally block)
+    3. Connection remains valid for reuse in pool
+    """
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
         yield cur
@@ -27,6 +106,26 @@ def get_cursor(conn, commit=True):
         raise
     finally:
         cur.close()
+
+@contextmanager
+def get_pooled_connection():
+    """
+    Context manager for pooled connections with automatic return.
+
+    Usage:
+        with get_pooled_connection() as conn:
+            # Use connection
+            pass
+        # Connection automatically returned to pool
+
+    Interview Note: This ensures connections are always returned to the pool,
+    even if exceptions occur. Prevents connection leaks.
+    """
+    conn = get_connection()
+    try:
+        yield conn
+    finally:
+        return_connection(conn)
 
 def claim_task(conn, worker_id: str):
     """
@@ -169,3 +268,18 @@ def update_document_status(conn, document_id, status, raw_content=None, metadata
                 UPDATE documents SET status = %s, updated_at = NOW()
                 WHERE id = %s
             """, (status, document_id))
+
+
+def heartbeat_worker(conn, worker_id: str, metadata: dict | None = None):
+    """
+    Upsert worker heartbeat. Called periodically by each worker process.
+    """
+    with get_cursor(conn) as cur:
+        cur.execute("""
+            INSERT INTO worker_heartbeats (worker_id, started_at, last_seen_at, metadata)
+            VALUES (%s, NOW(), NOW(), %s::jsonb)
+            ON CONFLICT (worker_id)
+            DO UPDATE SET
+                last_seen_at = NOW(),
+                metadata = EXCLUDED.metadata
+        """, (worker_id, Json(metadata or {})))

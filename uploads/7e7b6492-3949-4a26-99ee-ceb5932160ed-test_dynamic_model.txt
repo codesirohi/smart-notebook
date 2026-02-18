@@ -1,3 +1,0 @@
-This is a test document for checking dynamic model selection.
-We want to ensure that extraction uses one model and embedding uses another.
-Then we chat with yet another model.

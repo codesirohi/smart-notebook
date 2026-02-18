@@ -1,5 +1,8 @@
 import os
 from dataclasses import dataclass
+from dotenv import load_dotenv
+
+load_dotenv()
 
 @dataclass
 class Config:
@@ -12,13 +15,29 @@ class Config:
 
     # Ollama
     ollama_url: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
-    embedding_model: str = os.getenv("EMBEDDING_MODEL", "phi3:mini")
-    extraction_model: str = os.getenv("EXTRACTION_MODEL", "phi3:mini")
+    embedding_model: str = os.getenv("EMBEDDING_MODEL", "all-minilm")
+    extraction_model: str = os.getenv("EXTRACTION_MODEL", "tinyllama")
 
-    # API Keys
-    openai_api_key: str = os.getenv("OPENAI_API_KEY")
-    anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY")
-    gemini_api_key: str = os.getenv("GEMINI_API_KEY")
+    # Providers (Dynamic)
+    # Map of provider_name -> api_key
+    providers: dict = None
+
+    def __post_init__(self):
+        self.providers = {}
+        # Load standard keys
+        if os.getenv("OPENAI_API_KEY"):
+            self.providers["openai"] = os.getenv("OPENAI_API_KEY")
+        if os.getenv("ANTHROPIC_API_KEY"):
+            self.providers["anthropic"] = os.getenv("ANTHROPIC_API_KEY")
+        if os.getenv("GEMINI_API_KEY"):
+            self.providers["google"] = os.getenv("GEMINI_API_KEY")
+            
+        # Load dynamic keys: PROVIDER_{NAME}_API_KEY
+        for key, value in os.environ.items():
+            if key.startswith("PROVIDER_") and key.endswith("_API_KEY"):
+                # PROVIDER_COHERE_API_KEY -> cohere
+                provider_name = key[9:-8].lower()
+                self.providers[provider_name] = value
 
     # Worker
     poll_interval_sec: int = int(os.getenv("POLL_INTERVAL", "2"))
@@ -26,8 +45,8 @@ class Config:
     worker_id: str = os.getenv("WORKER_ID", f"{os.uname().nodename}-{os.getpid()}")
 
     # Chunking
-    chunk_size: int = int(os.getenv("CHUNK_SIZE", "512"))
-    chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "50"))
+    chunk_size: int = int(os.getenv("CHUNK_SIZE", "128"))
+    chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "15"))
 
     @property
     def db_url(self) -> str:

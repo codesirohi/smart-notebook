@@ -18,6 +18,11 @@ class OllamaClient:
             if resp.status_code != 200:
                 return False
 
+            # Skip validation for Gemini/Google models
+            if self.model.startswith("models/") or "gemini" in self.model or "text-embedding" in self.model:
+                self._verified = True
+                return True
+
             models = resp.json().get("models", [])
             model_names = [m["name"] for m in models]
             if self.model not in model_names and f"{self.model}:latest" not in model_names:

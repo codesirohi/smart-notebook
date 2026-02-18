@@ -64,6 +64,11 @@ public class NotebookService {
         if (!notebookRepo.existsById(id)) {
             throw new ResourceNotFoundException("Notebook not found: " + id);
         }
+        // Cascade delete documents (and their chunks/tasks via DB constraints or app
+        // logic)
+        List<org.sirohi.smartnotebook.model.Document> docs = documentRepo.findAllByNotebookId(id);
+        documentRepo.deleteAll(docs);
+
         notebookRepo.deleteById(id);
     }
 

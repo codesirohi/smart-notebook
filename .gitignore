@@ -4,7 +4,6 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
-
 ### STS ###
 .apt_generated
 .classpath
@@ -33,6 +32,72 @@ build/
 ### VS Code ###
 .vscode/
 
-### Documentation ###
+### Python ###
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+worker/__pycache__/
+worker/*.pyc
+*.egg-info/
+
+### Logs ###
+*.log
+app.log
+worker.log
+app-ci.log
+worker-ci.log
+
+### Uploaded Files ###
+uploads/
+*.txt
+!requirements.txt
+!worker/requirements.txt
+
+### Environment ###
+.env
+.env.local
+.env.*.local
+
+### Personal Documentation (Interview Prep) ###
 SMART_NOTEBOOK_BLUEPRINT.md
 Interview-Preparation-Guide.md
+PROJECT_ASSESSMENT.md
+QUICK_ASSESSMENT.md
+PRODUCTION_IMPROVEMENTS_2026_02_18.md
+IMPROVEMENTS_COMPLETE.md
+IMPROVEMENTS_SUMMARY.md
+TEST_RESULTS.md
+LIVE_TEST_ANALYSIS.md
+EMBEDDING_FIX_SUMMARY.md
+NEXT_STEPS_RECOMMENDATION.md
+FRONTEND_INTEGRATION_GUIDE.md
+FRONTEND_E2E_PROMPT.md
+ARCHITECTURE_REVIEW.md
+QUICK_IMPROVEMENTS.md
+STRUCTURED_LOGGING_PROGRESS.md
+MIGRATION_LANGGRAPH_TO_PIPELINE.md
+ADDING_NEW_PROVIDERS.md
+
+### Test Files ###
+test_*.txt
+test_*.pdf
+dummy.txt
+*_data_null.txt
+Untitled_document.pdf
+
+### Scripts (Personal) ###
+kill_port.sh
+verify_delete.sh
+
+### Temporary Files ###
+*.pid
+*.swp
+*.swo
+*~
+.DS_Store

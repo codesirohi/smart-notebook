@@ -44,6 +44,7 @@ app:
   query:
     default-top-k: 5
     max-top-k: 20
+    latency-budget-ms: ${QUERY_LATENCY_BUDGET_MS:15000}
 
   chat:
     history-window: 10  # Number of recent messages to include in RAG context
@@ -51,7 +52,7 @@ app:
 # Ollama config
   models:
     default-extraction-model: ${EXTRACTION_MODEL:tinyllama}
-    default-embedding-model: ${EMBEDDING_MODEL:all-minilm}
+    default-embedding-model: ${EMBEDDING_MODEL:nomic-embed-text}
     ollama:
       base-url: ${OLLAMA_URL:http://localhost:11434}
       enabled: true

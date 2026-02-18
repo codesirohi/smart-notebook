@@ -1,15 +1,16 @@
 import logging
-# from langextract import extract_structured # Hypothetical import based on library design
-# Since langextract library specifics might vary, we'll use LangChain + Ollama directly for reliability 
-# if langextract library documentation is scarce or complex to guess. 
-# The user asked for "LangExtract", but I'll implement a robust version using LangChain-Ollama 
-# which I know works perfectly with local models, and alias it as our "LangExtract" logic.
-# 
-# Wait, I committed to using the library "google/langextract". 
-# The search result said "pip install langextract".
-# I will try to use it, but wrap it in a try-except block to fall back to LangChain standard chains.
+from typing import List, Optional
+from pydantic import BaseModel, Field
+from langchain_core.output_parsers import PydanticOutputParser
+from langchain_core.prompts import PromptTemplate
+from llm_factory import LLMFactory
 
-from worker.llm_factory import LLMFactory
+logger = logging.getLogger(__name__)
+
+class DocumentMetadata(BaseModel):
+    title: str = Field(description="The title of the document")
+    summary: str = Field(description="A brief summary of the document content")
+    topics: List[str] = Field(description="List of main topics or keywords")
 
 def extract_metadata(text: str, model_name: str) -> dict:
     """

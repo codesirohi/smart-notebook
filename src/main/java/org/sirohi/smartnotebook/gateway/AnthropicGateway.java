@@ -3,7 +3,7 @@ package org.sirohi.smartnotebook.gateway;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.sirohi.smartnotebook.config.ModelConfig;
-import org.sirohi.smartnotebook.model.ModelProvider;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -26,7 +26,7 @@ public class AnthropicGateway implements ModelGateway {
     private static final Logger log = LoggerFactory.getLogger(AnthropicGateway.class);
 
     public AnthropicGateway(ModelConfig modelConfig, ObjectMapper objectMapper) {
-        this.config = modelConfig.getProviders().get(ModelProvider.ANTHROPIC);
+        this.config = modelConfig.getProvider("anthropic");
         this.objectMapper = objectMapper;
 
         String baseUrl = (config != null && config.getBaseUrl() != null)

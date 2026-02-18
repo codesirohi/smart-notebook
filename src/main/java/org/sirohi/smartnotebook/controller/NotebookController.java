@@ -22,6 +22,8 @@ import java.util.*;
 @CrossOrigin(origins = "http://localhost:5173")
 public class NotebookController {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(NotebookController.class);
+
     private final NotebookService notebookService;
     private final DocumentService documentService;
 
@@ -36,7 +38,9 @@ public class NotebookController {
     @PostMapping
     public ResponseEntity<NotebookResponse> createNotebook(
             @Valid @RequestBody NotebookRequest request) {
+        log.info("Creating notebook: '{}'", request.name());
         NotebookResponse response = notebookService.create(request);
+        log.info("Created notebook with ID: {}", response.id());
         return ResponseEntity
                 .created(URI.create("/api/notebooks/" + response.id()))
                 .body(response);
@@ -44,11 +48,13 @@ public class NotebookController {
 
     @GetMapping
     public ResponseEntity<List<NotebookResponse>> listNotebooks() {
+        log.debug("Listing all notebooks");
         return ResponseEntity.ok(notebookService.listAll());
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<NotebookResponse> getNotebook(@PathVariable UUID id) {
+        log.debug("Retrieving notebook: {}", id);
         return ResponseEntity.ok(notebookService.getById(id));
     }
 
@@ -56,11 +62,13 @@ public class NotebookController {
     public ResponseEntity<NotebookResponse> updateNotebook(
             @PathVariable UUID id,
             @Valid @RequestBody NotebookRequest request) {
+        log.info("Updating notebook: {}", id);
         return ResponseEntity.ok(notebookService.update(id, request));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteNotebook(@PathVariable UUID id) {
+        log.info("Deleting notebook: {}", id);
         notebookService.delete(id);
         return ResponseEntity.noContent().build();
     }
@@ -73,8 +81,13 @@ public class NotebookController {
             @RequestParam("file") MultipartFile file,
             @RequestParam("title") String title) {
 
+        log.info("Received upload request for notebook: {}, file: {}, title: {}", id, file.getOriginalFilename(),
+                title);
+
         validateFile(file);
         UploadResult result = documentService.uploadAndEnqueue(file, title, id);
+
+        log.info("Document accepted for notebook: {}. ID: {}, Task ID: {}", id, result.documentId(), result.taskId());
 
         return ResponseEntity
                 .accepted()
@@ -89,6 +102,7 @@ public class NotebookController {
             @PathVariable UUID id,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
+        log.debug("Listing documents for notebook: {}, Page: {}, Size: {}", id, page, size);
 
         Page<Document> docs = documentService.listDocumentsByNotebook(id, page, size);
 

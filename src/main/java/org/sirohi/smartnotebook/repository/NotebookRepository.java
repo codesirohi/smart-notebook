@@ -8,4 +8,5 @@ import java.util.UUID;
 
 @Repository
 public interface NotebookRepository extends JpaRepository<Notebook, UUID> {
+    java.util.Optional<Notebook> findFirstByOrderByCreatedAtAsc();
 }

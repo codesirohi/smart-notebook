@@ -17,6 +17,7 @@ import java.util.UUID;
 @RequestMapping("/api")
 public class ChatController {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ChatController.class);
     private final ChatService chatService;
 
     public ChatController(ChatService chatService) {
@@ -29,8 +30,10 @@ public class ChatController {
     public ResponseEntity<ChatResponse> createChat(
             @PathVariable UUID notebookId,
             @RequestBody(required = false) ChatRequest request) {
+        log.info("Received request to create chat for notebook: {}", notebookId);
         ChatRequest req = request != null ? request : new ChatRequest(null);
         ChatResponse chat = chatService.createChat(notebookId, req);
+        log.info("Created chat with ID: {}", chat.id());
         return ResponseEntity
                 .created(URI.create("/api/chats/" + chat.id()))
                 .body(chat);
@@ -38,6 +41,7 @@ public class ChatController {
 
     @GetMapping("/notebooks/{notebookId}/chats")
     public ResponseEntity<List<ChatResponse>> listChats(@PathVariable UUID notebookId) {
+        log.debug("Listing chats for notebook: {}", notebookId);
         return ResponseEntity.ok(chatService.listChats(notebookId));
     }
 
@@ -45,7 +49,14 @@ public class ChatController {
 
     @GetMapping("/chats/{chatId}")
     public ResponseEntity<ChatResponse> getChat(@PathVariable UUID chatId) {
+        log.debug("Retrieving chat: {}", chatId);
         return ResponseEntity.ok(chatService.getChatWithHistory(chatId));
+    }
+
+    @GetMapping("/chats/{chatId}/messages")
+    public ResponseEntity<List<ChatMessageResponse>> getChatMessages(@PathVariable UUID chatId) {
+        log.debug("Retrieving messages for chat: {}", chatId);
+        return ResponseEntity.ok(chatService.getChatWithHistory(chatId).messages());
     }
 
     /** Blocking endpoint — waits for full LLM response before returning. */
@@ -53,7 +64,9 @@ public class ChatController {
     public ResponseEntity<ChatMessageResponse> sendMessage(
             @PathVariable UUID chatId,
             @Valid @RequestBody ChatMessageRequest request) {
+        log.info("Received blocking message for chat: {}", chatId);
         ChatMessageResponse response = chatService.sendMessage(chatId, request);
+        log.info("Sent blocking response for chat: {}", chatId);
         return ResponseEntity.ok(response);
     }
 
@@ -66,11 +79,19 @@ public class ChatController {
     public Flux<ServerSentEvent<ChatTokenEvent>> streamMessage(
             @PathVariable UUID chatId,
             @Valid @RequestBody ChatMessageRequest request) {
-        return chatService.sendMessageStreaming(chatId, request);
+        log.info("Received streaming message request for chat: {}", chatId);
+        return chatService.sendMessageStreaming(chatId, request)
+                .doOnComplete(() -> log.info("Completed streaming for chat: {}", chatId))
+                .onErrorResume(e -> Flux.just(
+                        ServerSentEvent.<ChatTokenEvent>builder()
+                                .event("error")
+                                .data(ChatTokenEvent.error(e.getMessage()))
+                                .build()));
     }
 
     @DeleteMapping("/chats/{chatId}")
     public ResponseEntity<Void> deleteChat(@PathVariable UUID chatId) {
+        log.info("Deleting chat: {}", chatId);
         chatService.deleteChat(chatId);
         return ResponseEntity.noContent().build();
     }

@@ -1,6 +1,5 @@
 package org.sirohi.smartnotebook.controller;
 
-import org.sirohi.smartnotebook.gateway.ModelGateway;
 import org.sirohi.smartnotebook.gateway.ModelHealth;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -9,6 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -61,17 +61,54 @@ public class HealthController {
         // Queue stats
         try {
             Map<String, Object> queueStats = new LinkedHashMap<>();
-            queueStats.put("pending", jdbc.queryForObject(
-                    "SELECT count(*) FROM ingestion_tasks WHERE status = 'PENDING'", Integer.class));
-            queueStats.put("processing", jdbc.queryForObject(
-                    "SELECT count(*) FROM ingestion_tasks WHERE status = 'PROCESSING'", Integer.class));
-            queueStats.put("failed", jdbc.queryForObject(
-                    "SELECT count(*) FROM ingestion_tasks WHERE status = 'FAILED'", Integer.class));
-            queueStats.put("dead_letter", jdbc.queryForObject(
-                    "SELECT count(*) FROM ingestion_tasks WHERE status = 'DEAD_LETTER'", Integer.class));
+            int pending = jdbc.queryForObject(
+                    "SELECT count(*) FROM ingestion_tasks WHERE status = 'PENDING'", Integer.class);
+            int processing = jdbc.queryForObject(
+                    "SELECT count(*) FROM ingestion_tasks WHERE status = 'PROCESSING'", Integer.class);
+            int failed = jdbc.queryForObject(
+                    "SELECT count(*) FROM ingestion_tasks WHERE status = 'FAILED'", Integer.class);
+            int deadLetter = jdbc.queryForObject(
+                    "SELECT count(*) FROM ingestion_tasks WHERE status = 'DEAD_LETTER'", Integer.class);
+
+            queueStats.put("pending", pending);
+            queueStats.put("processing", processing);
+            queueStats.put("failed", failed);
+            queueStats.put("dead_letter", deadLetter);
             health.put("queue", queueStats);
         } catch (Exception e) {
             health.put("queue", Map.of("error", e.getMessage()));
+        }
+
+        // Worker heartbeat readiness
+        try {
+            Timestamp lastSeenTs = jdbc.queryForObject(
+                    "SELECT max(last_seen_at) FROM worker_heartbeats",
+                    Timestamp.class);
+
+            Map<String, Object> worker = new LinkedHashMap<>();
+            if (lastSeenTs == null) {
+                worker.put("status", "DOWN");
+                worker.put("message", "No worker heartbeat received yet");
+                health.put("status", "DEGRADED");
+            } else {
+                Instant lastSeen = lastSeenTs.toInstant();
+                long staleSeconds = java.time.Duration.between(lastSeen, Instant.now()).getSeconds();
+                boolean isUp = staleSeconds <= 15;
+
+                worker.put("status", isUp ? "UP" : "DOWN");
+                worker.put("lastSeenAt", lastSeen);
+                worker.put("staleSeconds", staleSeconds);
+                if (!isUp) {
+                    worker.put("message", "Worker heartbeat stale");
+                    health.put("status", "DEGRADED");
+                }
+            }
+            health.put("worker", worker);
+        } catch (Exception e) {
+            health.put("worker", Map.of(
+                    "status", "UNKNOWN",
+                    "message", e.getMessage()));
+            health.put("status", "DEGRADED");
         }
 
         HttpStatus status = "UP".equals(health.get("status"))
