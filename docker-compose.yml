@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg18
     container_name: sn-postgres
     environment:
       POSTGRES_DB: smartnotebook
@@ -9,7 +9,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     mem_limit: 256m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U notebook -d smartnotebook"]
@@ -17,30 +17,9 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:latest
-    container_name: sn-redis
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  ollama:
-    image: ollama/ollama:latest
-    container_name: sn-ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    healthcheck:
-      test: [ "CMD-SHELL", "ollama --version || exit 1" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  # Ollama removed - use native installation for Metal GPU acceleration
+  # Install: brew install ollama && ollama serve
+  # Performance: 27s (Docker/CPU) → 1-2s (Native/Metal GPU)
 
 volumes:
   postgres_data:
-  ollama_data:

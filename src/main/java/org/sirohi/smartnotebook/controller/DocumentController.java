@@ -93,6 +93,15 @@ public class DocumentController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    /**
+     * Backward-compatible alias for older clients polling /api/tasks/{taskId}.
+     * Canonical endpoint remains /api/tasks/{taskId}/status.
+     */
+    @GetMapping("/tasks/{taskId}")
+    public ResponseEntity<TaskStatusResponse> getTaskStatusLegacy(@PathVariable UUID taskId) {
+        return getTaskStatus(taskId);
+    }
+
     private void validateFile(MultipartFile file) {
         if (file.isEmpty()) {
             throw new BadRequestException("File is empty");

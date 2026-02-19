@@ -7,6 +7,7 @@ import org.sirohi.smartnotebook.repository.LocalModelRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import oshi.SystemInfo;
 import oshi.hardware.CentralProcessor;
@@ -111,6 +112,7 @@ public class HardwareDetectionService {
     /**
      * Get hardware info as DTO.
      */
+    @Transactional
     public HardwareInfoResponse getHardwareInfoResponse() {
         HardwareInfo info = getHardwareInfo();
         return HardwareInfoResponse.from(info);
@@ -119,7 +121,7 @@ public class HardwareDetectionService {
     /**
      * Update model recommendations based on available RAM.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void updateModelRecommendations(int availableRamGb) {
         log.debug("Updating model recommendations for {}GB available RAM", availableRamGb);
         localModelRepository.updateRecommendations(availableRamGb);

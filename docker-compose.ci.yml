@@ -1,0 +1,38 @@
+# CI-specific Docker Compose
+# Includes Ollama (Docker/CPU) since GitHub Actions doesn't have Metal GPU
+# For local development, use native Ollama instead (see run-smart-notebook.sh)
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg18
+    container_name: sn-postgres
+    environment:
+      POSTGRES_DB: smartnotebook
+      POSTGRES_USER: notebook
+      POSTGRES_PASSWORD: notebook_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notebook -d smartnotebook"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: sn-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: [ "CMD-SHELL", "ollama --version || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  ollama_data:

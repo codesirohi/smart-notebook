@@ -34,9 +34,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ModelGatewayException.class)
     public ResponseEntity<ErrorResponse> handleModelError(ModelGatewayException e) {
         log.error("Model gateway error", e);
+        String message = (e.getMessage() == null || e.getMessage().isBlank())
+                ? "AI model is not available. Please try again later."
+                : e.getMessage();
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(new ErrorResponse("MODEL_UNAVAILABLE",
-                        "AI model is not available. Please try again later."));
+                        message));
     }
 
     @ExceptionHandler(QuotaExceededException.class)

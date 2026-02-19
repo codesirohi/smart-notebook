@@ -21,96 +21,96 @@ public interface ApiUsageRepository extends JpaRepository<ApiUsage, UUID> {
     /**
      * Get total tokens used today for a provider.
      */
-    @Query("""
-        SELECT COALESCE(SUM(u.tokensInput + u.tokensOutput), 0)
-        FROM ApiUsage u
-        WHERE u.providerName = :providerName
-          AND DATE(u.requestTimestamp) = CURRENT_DATE
-        """)
+    @Query(value = """
+        SELECT COALESCE(SUM(u.tokens_input + u.tokens_output), 0)
+        FROM api_usage u
+        WHERE u.provider_name = :providerName
+          AND u.request_timestamp >= CURRENT_DATE
+        """, nativeQuery = true)
     Long getDailyTokenUsage(String providerName);
 
     /**
      * Get total cost this month for a provider.
      */
-    @Query("""
-        SELECT COALESCE(SUM(u.estimatedCostUsd), 0)
-        FROM ApiUsage u
-        WHERE u.providerName = :providerName
-          AND DATE_TRUNC('month', u.requestTimestamp) = DATE_TRUNC('month', CURRENT_DATE)
-        """)
+    @Query(value = """
+        SELECT COALESCE(SUM(u.estimated_cost_usd), 0)
+        FROM api_usage u
+        WHERE u.provider_name = :providerName
+          AND DATE_TRUNC('month', u.request_timestamp) = DATE_TRUNC('month', CURRENT_DATE)
+        """, nativeQuery = true)
     BigDecimal getMonthlyCost(String providerName);
 
     /**
      * Get request count in last minute for a provider (rate limiting).
      */
-    @Query("""
-        SELECT COUNT(u)
-        FROM ApiUsage u
-        WHERE u.providerName = :providerName
-          AND u.requestTimestamp > :oneMinuteAgo
-        """)
+    @Query(value = """
+        SELECT COUNT(*)
+        FROM api_usage u
+        WHERE u.provider_name = :providerName
+          AND u.request_timestamp > :oneMinuteAgo
+        """, nativeQuery = true)
     Long getRequestsInLastMinute(String providerName, OffsetDateTime oneMinuteAgo);
 
     /**
      * Get usage summary by provider for a time period.
      */
-    @Query("""
-        SELECT u.providerName,
-               SUM(u.tokensInput),
-               SUM(u.tokensOutput),
-               SUM(u.estimatedCostUsd),
-               COUNT(u),
+    @Query(value = """
+        SELECT u.provider_name,
+               COALESCE(SUM(u.tokens_input), 0),
+               COALESCE(SUM(u.tokens_output), 0),
+               COALESCE(SUM(u.estimated_cost_usd), 0),
+               COUNT(*),
                SUM(CASE WHEN u.success = false THEN 1 ELSE 0 END)
-        FROM ApiUsage u
-        WHERE u.requestTimestamp > :since
-        GROUP BY u.providerName
-        """)
+        FROM api_usage u
+        WHERE u.request_timestamp > :since
+        GROUP BY u.provider_name
+        """, nativeQuery = true)
     List<Object[]> getUsageSummaryByProvider(OffsetDateTime since);
 
     /**
      * Get usage summary by model for a provider.
      */
-    @Query("""
-        SELECT u.modelName,
-               SUM(u.tokensInput + u.tokensOutput),
-               SUM(u.estimatedCostUsd),
-               COUNT(u)
-        FROM ApiUsage u
-        WHERE u.providerName = :providerName
-          AND u.requestTimestamp > :since
-        GROUP BY u.modelName
-        """)
+    @Query(value = """
+        SELECT u.model_name,
+               COALESCE(SUM(u.tokens_input + u.tokens_output), 0),
+               COALESCE(SUM(u.estimated_cost_usd), 0),
+               COUNT(*)
+        FROM api_usage u
+        WHERE u.provider_name = :providerName
+          AND u.request_timestamp > :since
+        GROUP BY u.model_name
+        """, nativeQuery = true)
     List<Object[]> getUsageByModel(String providerName, OffsetDateTime since);
 
     /**
      * Get usage summary by operation for a provider.
      */
-    @Query("""
+    @Query(value = """
         SELECT u.operation,
-               SUM(u.tokensInput + u.tokensOutput),
-               SUM(u.estimatedCostUsd),
-               COUNT(u)
-        FROM ApiUsage u
-        WHERE u.providerName = :providerName
-          AND u.requestTimestamp > :since
+               COALESCE(SUM(u.tokens_input + u.tokens_output), 0),
+               COALESCE(SUM(u.estimated_cost_usd), 0),
+               COUNT(*)
+        FROM api_usage u
+        WHERE u.provider_name = :providerName
+          AND u.request_timestamp > :since
         GROUP BY u.operation
-        """)
+        """, nativeQuery = true)
     List<Object[]> getUsageByOperation(String providerName, OffsetDateTime since);
 
     /**
      * Get daily usage breakdown for a provider.
      */
-    @Query("""
-        SELECT DATE(u.requestTimestamp),
-               SUM(u.tokensInput + u.tokensOutput),
-               SUM(u.estimatedCostUsd),
-               COUNT(u)
-        FROM ApiUsage u
-        WHERE u.providerName = :providerName
-          AND u.requestTimestamp > :since
-        GROUP BY DATE(u.requestTimestamp)
-        ORDER BY DATE(u.requestTimestamp)
-        """)
+    @Query(value = """
+        SELECT DATE(u.request_timestamp),
+               COALESCE(SUM(u.tokens_input + u.tokens_output), 0),
+               COALESCE(SUM(u.estimated_cost_usd), 0),
+               COUNT(*)
+        FROM api_usage u
+        WHERE u.provider_name = :providerName
+          AND u.request_timestamp > :since
+        GROUP BY DATE(u.request_timestamp)
+        ORDER BY DATE(u.request_timestamp)
+        """, nativeQuery = true)
     List<Object[]> getDailyBreakdown(String providerName, OffsetDateTime since);
 
     /**
@@ -126,24 +126,24 @@ public interface ApiUsageRepository extends JpaRepository<ApiUsage, UUID> {
     /**
      * Get average latency by provider.
      */
-    @Query("""
-        SELECT COALESCE(AVG(u.latencyMs), 0)
-        FROM ApiUsage u
-        WHERE u.providerName = :providerName
+    @Query(value = """
+        SELECT COALESCE(AVG(u.latency_ms), 0)
+        FROM api_usage u
+        WHERE u.provider_name = :providerName
           AND u.success = true
-          AND u.requestTimestamp > :since
-        """)
+          AND u.request_timestamp > :since
+        """, nativeQuery = true)
     Double getAverageLatency(String providerName, OffsetDateTime since);
 
     /**
      * Get error count by provider.
      */
-    @Query("""
-        SELECT COUNT(u)
-        FROM ApiUsage u
-        WHERE u.providerName = :providerName
+    @Query(value = """
+        SELECT COUNT(*)
+        FROM api_usage u
+        WHERE u.provider_name = :providerName
           AND u.success = false
-          AND u.requestTimestamp > :since
-        """)
+          AND u.request_timestamp > :since
+        """, nativeQuery = true)
     Long getErrorCount(String providerName, OffsetDateTime since);
 }

@@ -2,7 +2,7 @@ package org.sirohi.smartnotebook.gateway;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.sirohi.smartnotebook.config.ModelConfig;
+import org.sirohi.smartnotebook.service.CredentialProvider;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,34 +16,40 @@ import java.util.Map;
 
 /**
  * Gateway for Google Gemini API.
+ * Credentials are fetched dynamically from the database.
  */
 @Component
 public class GeminiGateway implements ModelGateway {
 
-    private final WebClient webClient;
-    private final ModelConfig.ProviderConfig config;
+    private static final String PROVIDER_ID = "google";
+    private static final String DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
+    private static final String DEFAULT_MODEL = "gemini-1.5-flash";
+    private static final String DEFAULT_EMBEDDING_MODEL = "text-embedding-004";
+
+    private final CredentialProvider credentialProvider;
     private final ObjectMapper objectMapper;
+    private final WebClient.Builder webClientBuilder;
     private static final Logger log = LoggerFactory.getLogger(GeminiGateway.class);
 
-    public GeminiGateway(ModelConfig modelConfig, ObjectMapper objectMapper) {
-        this.config = modelConfig.getProvider("google");
+    public GeminiGateway(CredentialProvider credentialProvider, ObjectMapper objectMapper) {
+        this.credentialProvider = credentialProvider;
         this.objectMapper = objectMapper;
+        this.webClientBuilder = WebClient.builder();
+        log.info("GeminiGateway initialized (credentials from database)");
+    }
 
-        String baseUrl = (config != null && config.getBaseUrl() != null)
-                ? config.getBaseUrl()
-                : "https://generativelanguage.googleapis.com/v1beta";
+    private WebClient buildClient() {
+        String apiKey = credentialProvider.getApiKey(PROVIDER_ID);
+        String baseUrl = credentialProvider.getBaseUrl(PROVIDER_ID);
 
-        // API Key is passed via query param or header x-goog-api-key
-        String apiKey = (config != null) ? config.getApiKey() : null;
-
-        this.webClient = WebClient.builder()
-                .baseUrl(baseUrl)
+        return webClientBuilder
+                .baseUrl(baseUrl != null ? baseUrl : DEFAULT_BASE_URL)
                 .defaultHeader("x-goog-api-key", apiKey)
                 .build();
     }
 
     private boolean isEnabled() {
-        return config != null && config.isEnabled() && config.getApiKey() != null;
+        return credentialProvider.isProviderAvailable(PROVIDER_ID);
     }
 
     @Override
@@ -53,10 +59,10 @@ public class GeminiGateway implements ModelGateway {
 
         long start = System.currentTimeMillis();
         Map<String, Object> body = createGeminiBody(request);
-        String model = request.model() != null ? request.model() : "gemini-1.5-flash";
+        String model = request.model() != null ? request.model() : DEFAULT_MODEL;
 
         try {
-            JsonNode response = webClient.post()
+            JsonNode response = buildClient().post()
                     .uri("/models/" + model + ":generateContent")
                     .bodyValue(body)
                     .retrieve()
@@ -77,6 +83,8 @@ public class GeminiGateway implements ModelGateway {
                 evalTokens = response.get("usageMetadata").path("candidatesTokenCount").asInt();
             }
 
+            log.debug("Gemini completion in {}ms (prompt={}, completion={})", latency, promptTokens, evalTokens);
+
             return new CompletionResponse(text, promptTokens, evalTokens, latency, model);
         } catch (Exception e) {
             throw new ModelGatewayException("Gemini completion failed: " + e.getMessage(), e);
@@ -88,42 +96,10 @@ public class GeminiGateway implements ModelGateway {
         if (!isEnabled())
             return Flux.error(new ModelGatewayException("Gemini provider is disabled"));
 
-        Map<String, Object> body = createGeminiBody(request);
-        String model = request.model() != null ? request.model() : "gemini-1.5-flash";
-
-        // streamGenerateContent returns a JSON array stream, but not standard SSE.
-        // It returns partial JSON objects.
-        // Actually, for REST, it might return a stream of JSON objects.
-        // We'll assume standard WebClient stream parsing.
-
-        return webClient.post()
-                .uri("/models/" + model + ":streamGenerateContent?alt=sse") // &alt=sse force SSE if supported?
-                // Gemini REST API default for streamGenerateContent is a JSON array.
-                // But Spring WebClient json stream?
-                // Actually, let's use the alt=sse if available, or just handle JSON stream.
-                // Google docs say: POST ...:streamGenerateContent
-                // Response is a stream of GenerateContentResponse.
-
-                // Let's assume alt=sse is NOT standard.
-                // We'll use strict JSON array parsing?
-                // Actually, this is complex for "Production Ready" in one shot without testing.
-                // I'll stick to basic implementation or assume `alt=sse` works (it does for
-                // some Google APIs).
-                // Or I'll handle the JSON chunks.
-
-                // Correction: Google AI Studio sends standard JSON response array.
-                // I'll skip streaming implementation for Gemini in this MVP step if unsure, OR
-                // fall back to blocking complete() wrapped in Flux.
-                // Implementation Guide says "Production Ready".
-                // I will fall back to blocking for Gemini Streaming to avoid breakage, as
-                // manual JSON array parsing in WebFlux is tricky without `JsonDecoder`.
-                // Or I'll just use complete().
-
-                .bodyValue(body)
-                .exchangeToFlux(response -> {
-                    return Flux.error(
-                            new ModelGatewayException("Gemini streaming not yet optimized in this gateway version."));
-                });
+        // Gemini streaming requires complex JSON array parsing
+        // Fall back to non-streaming for now
+        return Flux.error(
+                new ModelGatewayException("Gemini streaming not yet optimized in this gateway version."));
     }
 
     @Override
@@ -132,13 +108,13 @@ public class GeminiGateway implements ModelGateway {
             throw new ModelGatewayException("Gemini provider is disabled");
 
         long start = System.currentTimeMillis();
-        String model = request.model() != null ? request.model() : "text-embedding-004";
+        String model = request.model() != null ? request.model() : DEFAULT_EMBEDDING_MODEL;
 
         Map<String, Object> body = Map.of(
                 "content", Map.of("parts", List.of(Map.of("text", request.text()))));
 
         try {
-            JsonNode response = webClient.post()
+            JsonNode response = buildClient().post()
                     .uri("/models/" + model + ":embedContent")
                     .bodyValue(body)
                     .retrieve()
@@ -153,6 +129,8 @@ public class GeminiGateway implements ModelGateway {
                 vector[i] = (float) values.get(i).asDouble();
             }
 
+            log.debug("Gemini embedding in {}ms (dims={})", latency, vector.length);
+
             return new EmbeddingResponse(vector, vector.length, latency, model);
         } catch (Exception e) {
             throw new ModelGatewayException("Gemini embedding failed", e);
@@ -162,11 +140,10 @@ public class GeminiGateway implements ModelGateway {
     @Override
     public ModelHealth health() {
         if (!isEnabled())
-            return new ModelHealth(false, "gemini", "N/A", "Disabled/No Key");
+            return new ModelHealth(false, PROVIDER_ID, "N/A", "Disabled/No Key");
 
         try {
-            // Ping by listing 1 model
-            webClient.get()
+            buildClient().get()
                     .uri(uriBuilder -> uriBuilder
                             .path("/models")
                             .queryParam("pageSize", 1)
@@ -174,22 +151,21 @@ public class GeminiGateway implements ModelGateway {
                     .retrieve()
                     .toBodilessEntity()
                     .block();
-            return new ModelHealth(true, "gemini", "default", "Connected");
+            return new ModelHealth(true, PROVIDER_ID, DEFAULT_MODEL, "Connected");
         } catch (Exception e) {
-            return new ModelHealth(false, "gemini", "default", "Error: " + e.getMessage());
+            return new ModelHealth(false, PROVIDER_ID, DEFAULT_MODEL, "Error: " + e.getMessage());
         }
     }
 
     @Override
     public String providerId() {
-        return "google";
+        return PROVIDER_ID;
     }
 
     private Map<String, Object> createGeminiBody(CompletionRequest request) {
         Map<String, Object> body = new HashMap<>();
 
         // Gemini: contents: [{ role: "user", parts: [{ text: "..." }] }]
-        // System instruction is separate field in v1beta
         if (request.systemPrompt() != null) {
             body.put("system_instruction", Map.of("parts", Map.of("text", request.systemPrompt())));
         }

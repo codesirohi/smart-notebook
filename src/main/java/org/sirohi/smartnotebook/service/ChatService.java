@@ -110,7 +110,8 @@ public class ChatService {
                                         5,
                                         notebookDocIds,
                                         historyChronological,
-                                        request.model());
+                                        request.model(),
+                                        notebookId);
                 } catch (Exception e) {
                         log.error("RAG query failed for chat: {}", chatId, e);
                         throw e;
@@ -181,7 +182,8 @@ public class ChatService {
                 log.info("Initiating streaming RAG query...");
                 long startTime = System.currentTimeMillis();
                 QueryService.StreamingQueryContext ctx = queryService.queryStreaming(
-                                request.content(), 5, notebookDocIds, historyChronological, request.model());
+                                request.content(), 5, notebookDocIds, historyChronological, request.model(),
+                                notebookId);
 
                 // 5. Build SSE event stream
                 StringBuilder fullResponse = new StringBuilder();

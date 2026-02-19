@@ -21,5 +21,8 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     @Query("SELECT d.id FROM Document d WHERE d.notebook.id = :notebookId")
     List<UUID> findIdsByNotebookId(UUID notebookId);
 
+    @Query("SELECT DISTINCT d.notebook.id FROM Document d")
+    List<UUID> findNotebookIdsWithDocuments();
+
     List<Document> findAllByNotebookId(UUID notebookId);
 }

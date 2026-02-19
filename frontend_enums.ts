@@ -2,6 +2,7 @@ export enum ModelProvider {
     GOOGLE = 'google',
     ANTHROPIC = 'anthropic',
     OPENAI = 'openai',
+    GROQ = 'groq',
     OLLAMA = 'ollama',
 }
 
@@ -13,6 +14,8 @@ export const AVAILABLE_MODELS = [
     { provider: ModelProvider.ANTHROPIC, id: 'claude-3-opus-20240229', name: 'Claude 3 Opus' },
     { provider: ModelProvider.GOOGLE, id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' },
     { provider: ModelProvider.GOOGLE, id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro' },
+    { provider: ModelProvider.GROQ, id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B (Groq)' },
+    { provider: ModelProvider.GROQ, id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B (Groq)' },
     { provider: ModelProvider.OLLAMA, id: 'phi3:mini', name: 'Phi-3 Mini (Local)' },
     { provider: ModelProvider.OLLAMA, id: 'llama3', name: 'Llama 3 (Local)' },
     { provider: ModelProvider.OLLAMA, id: 'tinyllama', name: 'TinyLlama (Local)' },

@@ -53,9 +53,15 @@ app:
   chat:
     history-window: 10  # Number of recent messages to include in RAG context
 
-# Ollama config
+  # MMR (Maximal Marginal Relevance) for diverse retrieval
+  mmr:
+    enabled: true
+    lambda: 0.7           # 1.0 = pure relevance, 0.0 = max diversity
+    candidate-multiplier: 3  # Fetch 3x topK candidates for re-ranking
+
+# Ollama config (native installation for Metal GPU acceleration)
   models:
-    default-extraction-model: ${EXTRACTION_MODEL:tinyllama}
+    default-extraction-model: ${EXTRACTION_MODEL:llama3.2}
     default-embedding-model: ${EMBEDDING_MODEL:nomic-embed-text}
     ollama:
       base-url: ${OLLAMA_URL:http://localhost:11434}
@@ -68,6 +74,10 @@ app:
       enabled: true
     google:
       api-key: ${GEMINI_API_KEY:}
+      enabled: true
+    groq:
+      api-key: ${GROQ_API_KEY:}
+      base-url: ${GROQ_BASE_URL:https://api.groq.com/openai/v1}
       enabled: true
 
 # Actuator

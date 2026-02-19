@@ -13,10 +13,10 @@ class Config:
     db_user: str = os.getenv("DB_USER", "notebook")
     db_password: str = os.getenv("DB_PASSWORD", "notebook_dev")
 
-    # Ollama
+    # Ollama (native installation for Metal GPU acceleration)
     ollama_url: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
-    embedding_model: str = os.getenv("EMBEDDING_MODEL", "all-minilm")
-    extraction_model: str = os.getenv("EXTRACTION_MODEL", "tinyllama")
+    embedding_model: str = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
+    extraction_model: str = os.getenv("EXTRACTION_MODEL", "llama3.2")
 
     # Providers (Dynamic)
     # Map of provider_name -> api_key

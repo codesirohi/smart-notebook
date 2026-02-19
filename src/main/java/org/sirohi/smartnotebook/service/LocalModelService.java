@@ -83,7 +83,7 @@ public class LocalModelService {
     /**
      * List recommended models based on hardware.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public List<LocalModelResponse> listRecommendedModels() {
         // Ensure hardware is detected and recommendations updated
         hardwareService.getHardwareInfo();

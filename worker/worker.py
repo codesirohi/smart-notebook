@@ -22,7 +22,7 @@ from db import (
     get_connection, return_connection, get_pooled_connection,
     claim_task, complete_task, fail_task,
     reap_stale_tasks, requeue_failed_tasks, store_chunks,
-    update_document_status, heartbeat_worker
+    update_document_status, heartbeat_worker, update_task_progress
 )
 from processor import DocumentProcessor
 from ollama_client import OllamaClient
@@ -184,6 +184,7 @@ def run_worker():
 
         thread_conn = None
         start_time = time.time()
+        final_state = None
 
         try:
             # Get connection from pool
@@ -195,16 +196,45 @@ def run_worker():
                 base_config.update(payload['config'])
 
             initial_state = {
+                "task_id": str(task_id),
                 "document_id": str(doc_id),
                 "source_path": payload.get('source_path'),
                 "content_type": payload.get('content_type', 'text/plain'),
                 "config": base_config,
+                # Reuse the task thread's DB connection in pipeline store step.
+                "db_conn": thread_conn,
+                "worker_id": config.worker_id,
+                "retry_count": task.get('retry_count', 0),
+                "current_step": None,
+                "step_timings": {},
                 "status": "PENDING",
                 "metadata": {},
                 "chunks": [],
                 "embeddings": [],
                 "errors": []
             }
+
+            logger.info(
+                "task_pipeline_context",
+                task_id=task_id,
+                document_id=doc_id,
+                worker_id=config.worker_id,
+                retry_count=task.get('retry_count', 0),
+                extraction_model=base_config.get("extraction_model"),
+                embedding_model=base_config.get("embedding_model"),
+                chunk_size=base_config.get("chunk_size"),
+                chunk_overlap=base_config.get("chunk_overlap"),
+            )
+
+            update_task_progress(thread_conn, task_id, {
+                "task_id": str(task_id),
+                "document_id": str(doc_id),
+                "worker_id": config.worker_id,
+                "pipeline_status": "STARTED",
+                "current_step": "QUEUE_TO_PIPELINE",
+                "step_timings": {},
+                "updated_at_epoch_ms": int(time.time() * 1000)
+            })
 
             # Run Pipeline (pipeline logs internally with structured logging)
             final_state = ingestion_pipeline.execute(initial_state)
@@ -213,9 +243,13 @@ def run_worker():
             if final_state["status"] == "COMPLETED":
                 result = {
                     "status": "COMPLETED",
+                    "pipeline_status": "COMPLETED",
+                    "current_step": final_state.get("current_step"),
                     "chunks_created": len(final_state["chunks"]),
                     "processing_time_ms": duration,
-                    "metadata_extracted": True
+                    "metadata_extracted": True,
+                    "step_timings": final_state.get("step_timings", {}),
+                    "errors": final_state.get("errors", [])
                 }
                 complete_task(thread_conn, task_id, result)
 
@@ -235,6 +269,11 @@ def run_worker():
 
         except Exception as e:
             duration = int((time.time() - start_time) * 1000)
+            failed_step = None
+            pipeline_errors = []
+            if final_state and isinstance(final_state, dict):
+                failed_step = final_state.get("current_step")
+                pipeline_errors = final_state.get("errors", [])
 
             if STRUCTURED_LOGGING:
                 log_task_failed(
@@ -251,9 +290,22 @@ def run_worker():
             error_details = {
                 "exception_type": type(e).__name__,
                 "message": str(e),
-                "worker_id": config.worker_id
+                "worker_id": config.worker_id,
+                "failed_step": failed_step,
+                "pipeline_errors": pipeline_errors,
+                "duration_ms": duration
             }
             if thread_conn:
+                update_task_progress(thread_conn, task_id, {
+                    "task_id": str(task_id),
+                    "document_id": str(doc_id),
+                    "worker_id": config.worker_id,
+                    "pipeline_status": "FAILED",
+                    "current_step": failed_step,
+                    "step_timings": (final_state or {}).get("step_timings", {}),
+                    "errors": pipeline_errors + [str(e)],
+                    "updated_at_epoch_ms": int(time.time() * 1000)
+                })
                 fail_task(thread_conn, task_id, str(e), error_details)
                 update_document_status(thread_conn, str(doc_id), 'FAILED')
         finally:

@@ -2,7 +2,6 @@ package org.sirohi.smartnotebook.repository;
 
 import org.sirohi.smartnotebook.model.HardwareInfo;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
@@ -22,12 +21,14 @@ public interface HardwareInfoRepository extends JpaRepository<HardwareInfo, UUID
     /**
      * Get the recommended tier from cached hardware info.
      */
-    @Query("SELECT h.recommendedTier FROM HardwareInfo h WHERE h.id = '00000000-0000-0000-0000-000000000001'")
-    Optional<String> getRecommendedTier();
+    default Optional<String> getRecommendedTier() {
+        return getSingleton().map(HardwareInfo::getRecommendedTier);
+    }
 
     /**
      * Get available RAM from cached hardware info.
      */
-    @Query("SELECT h.availableRamGb FROM HardwareInfo h WHERE h.id = '00000000-0000-0000-0000-000000000001'")
-    Optional<Integer> getAvailableRam();
+    default Optional<Integer> getAvailableRam() {
+        return getSingleton().map(HardwareInfo::getAvailableRamGb);
+    }
 }

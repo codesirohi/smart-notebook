@@ -2,7 +2,7 @@ package org.sirohi.smartnotebook.gateway;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.sirohi.smartnotebook.config.ModelConfig;
+import org.sirohi.smartnotebook.service.CredentialProvider;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,27 +16,33 @@ import java.util.Map;
 
 /**
  * Gateway for Anthropic API (Claude).
+ * Credentials are fetched dynamically from the database.
  */
 @Component
 public class AnthropicGateway implements ModelGateway {
 
-    private final WebClient webClient;
-    private final ModelConfig.ProviderConfig config;
+    private static final String PROVIDER_ID = "anthropic";
+    private static final String DEFAULT_BASE_URL = "https://api.anthropic.com/v1";
+    private static final String DEFAULT_MODEL = "claude-3-haiku-20240307";
+
+    private final CredentialProvider credentialProvider;
     private final ObjectMapper objectMapper;
+    private final WebClient.Builder webClientBuilder;
     private static final Logger log = LoggerFactory.getLogger(AnthropicGateway.class);
 
-    public AnthropicGateway(ModelConfig modelConfig, ObjectMapper objectMapper) {
-        this.config = modelConfig.getProvider("anthropic");
+    public AnthropicGateway(CredentialProvider credentialProvider, ObjectMapper objectMapper) {
+        this.credentialProvider = credentialProvider;
         this.objectMapper = objectMapper;
+        this.webClientBuilder = WebClient.builder();
+        log.info("AnthropicGateway initialized (credentials from database)");
+    }
 
-        String baseUrl = (config != null && config.getBaseUrl() != null)
-                ? config.getBaseUrl()
-                : "https://api.anthropic.com/v1";
+    private WebClient buildClient() {
+        String apiKey = credentialProvider.getApiKey(PROVIDER_ID);
+        String baseUrl = credentialProvider.getBaseUrl(PROVIDER_ID);
 
-        String apiKey = (config != null) ? config.getApiKey() : null;
-
-        this.webClient = WebClient.builder()
-                .baseUrl(baseUrl)
+        return webClientBuilder
+                .baseUrl(baseUrl != null ? baseUrl : DEFAULT_BASE_URL)
                 .defaultHeader("x-api-key", apiKey)
                 .defaultHeader("anthropic-version", "2023-06-01")
                 .defaultHeader("content-type", "application/json")
@@ -44,19 +50,19 @@ public class AnthropicGateway implements ModelGateway {
     }
 
     private boolean isEnabled() {
-        return config != null && config.isEnabled() && config.getApiKey() != null;
+        return credentialProvider.isProviderAvailable(PROVIDER_ID);
     }
 
     @Override
     public CompletionResponse complete(CompletionRequest request) {
         if (!isEnabled())
-            throw new ModelGatewayException("Anthropic provider is not enabled");
+            throw new ModelGatewayException("Anthropic provider is not enabled or API key is missing");
 
         long start = System.currentTimeMillis();
         Map<String, Object> body = createMessagesBody(request, false);
 
         try {
-            JsonNode response = webClient.post()
+            JsonNode response = buildClient().post()
                     .uri("/messages")
                     .bodyValue(body)
                     .retrieve()
@@ -74,6 +80,8 @@ public class AnthropicGateway implements ModelGateway {
             int promptTokens = usage.path("input_tokens").asInt();
             int evalTokens = usage.path("output_tokens").asInt();
 
+            log.debug("Anthropic completion in {}ms (prompt={}, completion={})", latency, promptTokens, evalTokens);
+
             return new CompletionResponse(text, promptTokens, evalTokens, latency, request.model());
         } catch (Exception e) {
             throw new ModelGatewayException("Anthropic completion failed: " + e.getMessage(), e);
@@ -87,24 +95,12 @@ public class AnthropicGateway implements ModelGateway {
 
         Map<String, Object> body = createMessagesBody(request, true);
 
-        return webClient.post()
+        return buildClient().post()
                 .uri("/messages")
                 .bodyValue(body)
                 .retrieve()
                 .bodyToFlux(String.class)
                 .flatMap(line -> {
-                    // Anthropic SSE events: event: content_block_delta, data: { delta: { text:
-                    // "..." } }
-                    // Does WebClient split by "event:"? No, bodyToFlux(String) usually splits by
-                    // newlines or raw chunks.
-                    // For proper SSE, we should use bodyToFlux(ServerSentEvent.class) or better
-                    // parsing.
-                    // But simplified here assuming standard SSE format where line starts with
-                    // "data: "
-
-                    // Actually, let's use a simpler heuristic for raw stream:
-                    // Anthropic sends "event: ..." lines and "data: ..." lines.
-                    // We look for "data: " lines.
                     if (!line.startsWith("data: "))
                         return Flux.empty();
                     String json = line.substring(6);
@@ -127,19 +123,17 @@ public class AnthropicGateway implements ModelGateway {
 
     @Override
     public EmbeddingResponse embed(EmbeddingRequest request) {
-        // Anthropic does not support embeddings yet (officially recommends Voy or
-        // others).
+        // Anthropic does not support embeddings yet
         throw new ModelGatewayException("Anthropic does not support embeddings API via this gateway.");
     }
 
     @Override
     public ModelHealth health() {
         if (!isEnabled())
-            return new ModelHealth(false, "anthropic", "N/A", "Disabled/No Key");
+            return new ModelHealth(false, PROVIDER_ID, "N/A", "Disabled/No Key");
 
         try {
-            // Ping by listing 1 model
-            webClient.get()
+            buildClient().get()
                     .uri(uriBuilder -> uriBuilder
                             .path("/models")
                             .queryParam("limit", 1)
@@ -147,20 +141,20 @@ public class AnthropicGateway implements ModelGateway {
                     .retrieve()
                     .toBodilessEntity()
                     .block();
-            return new ModelHealth(true, "anthropic", "default", "Connected");
+            return new ModelHealth(true, PROVIDER_ID, DEFAULT_MODEL, "Connected");
         } catch (Exception e) {
-            return new ModelHealth(false, "anthropic", "default", "Error: " + e.getMessage());
+            return new ModelHealth(false, PROVIDER_ID, DEFAULT_MODEL, "Error: " + e.getMessage());
         }
     }
 
     @Override
     public String providerId() {
-        return "anthropic";
+        return PROVIDER_ID;
     }
 
     private Map<String, Object> createMessagesBody(CompletionRequest request, boolean stream) {
         Map<String, Object> body = new HashMap<>();
-        body.put("model", request.model() != null ? request.model() : "claude-3-haiku-20240307");
+        body.put("model", request.model() != null ? request.model() : DEFAULT_MODEL);
         body.put("stream", stream);
         body.put("max_tokens", 4096);
 

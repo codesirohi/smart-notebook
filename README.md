@@ -17,13 +17,91 @@ Smart Notebook is a production-grade RAG (Retrieval-Augmented Generation) system
 - Notebook-scoped document organization
 - Async ingestion with Postgres-as-queue (SKIP LOCKED pattern)
 - Vector search (pgvector, 768-dim embeddings)
-- Grounded RAG with citations
+- MMR re-ranking for diverse retrieval results
+- Grounded RAG with citations (few-shot prompting)
+- Embedding cache (100-240ms savings per cached query)
 - Duplicate detection (SHA-256 checksum)
 - Structured logging (JSON/console)
 - Worker heartbeat monitoring
 - Connection pooling (ThreadedConnectionPool)
-- Few-shot RAG prompting for quality
+- Multi-provider support (Ollama, OpenAI, Anthropic, Google, Groq)
 - E2E CI tests (GitHub Actions)
+
+---
+
+## Screenshots
+
+### Operations Console
+
+Monitor system health, manage AI providers, and configure usage quotas from a centralized dashboard.
+
+![Operations Console](docs/screenshots/operations-console.png)
+
+**Features shown:**
+- System health monitoring (Database, Background Worker status)
+- AI Provider management (OpenAI, Groq, Gemini, Anthropic, Ollama)
+- Model status with online/offline indicators
+- Usage & quota configuration (daily tokens, monthly USD, RPM limits)
+
+---
+
+### Pipeline Model Configuration
+
+Configure global defaults for extraction, embedding, and chat models across all notebooks.
+
+![Pipeline Model Config](docs/screenshots/pipeline-model-config.png)
+
+**Configurable stages:**
+- **Extraction**: Model for metadata extraction from documents
+- **Embedding**: Model for generating vector embeddings
+- **Chat**: Model for RAG completions and Q&A
+
+---
+
+### Local Models (Ollama)
+
+Hardware-aware model recommendations with one-click installation.
+
+![Local Models](docs/screenshots/local-models.png)
+
+![Local Models LLM Filter](docs/screenshots/local-models-llm.png)
+
+**Features:**
+- Available/Total RAM display
+- Machine-based model suggestions
+- Min/Recommended RAM requirements per model
+- Filter by model type (All, LLM, Embedding)
+- One-click Install button
+
+---
+
+### Document Chat Interface
+
+Upload documents and chat with AI-powered Q&A featuring citations.
+
+![Chat Interface](docs/screenshots/chat-interface.png)
+
+![Chat with Citations](docs/screenshots/chat-citations.png)
+
+**Features:**
+- Notebook-scoped document organization
+- Real-time chat with latency display
+- Citation support with similarity scores
+- Per-notebook model configuration override
+
+---
+
+### Document Management
+
+Upload and manage documents with per-notebook pipeline configuration.
+
+![Document Panel](docs/screenshots/document-panel.png)
+
+**Features:**
+- Drag & drop file upload (PDF, MD, TXT - max 50MB)
+- Upload progress with status indicators
+- Per-notebook extraction/embedding/chat model configuration
+- Reset to global defaults option
 
 ---
 
@@ -76,14 +154,18 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r worker/requirements.txt
 
-# 2. Start infrastructure
-docker compose up -d postgres redis ollama
+# 2. Start PostgreSQL (only service in Docker)
+docker compose up -d postgres
 
-# 3. Pull models
-docker exec sn-ollama ollama pull tinyllama
-docker exec sn-ollama ollama pull nomic-embed-text
+# 3. Install native Ollama (Metal GPU acceleration on Mac)
+brew install ollama
+ollama serve &
 
-# 4. Start services
+# 4. Pull models (native Ollama - 92% faster than Docker)
+ollama pull llama3.2          # Chat/extraction model
+ollama pull nomic-embed-text  # Embedding model (768 dims)
+
+# 5. Start services
 ./run-smart-notebook.sh
 ```
 
@@ -196,21 +278,24 @@ node scripts/smart-notebook-e2e.mjs
 ### Key Environment Variables
 
 ```bash
-# Models
+# Models (defaults shown)
 EMBEDDING_MODEL=nomic-embed-text  # 768-dim
-EXTRACTION_MODEL=tinyllama
-CHAT_MODEL=tinyllama
+EXTRACTION_MODEL=llama3.2         # For metadata extraction
+CHAT_MODEL=llama3.2               # For RAG completions
 
 # Worker
 POLL_INTERVAL=2
 LOG_FORMAT=console  # or json
 LOG_LEVEL=INFO
 
-# Optional API keys
-GEMINI_API_KEY=...
+# Ollama (native installation recommended)
+OLLAMA_URL=http://localhost:11434
+
+# Optional API keys (for cloud providers)
 OPENAI_API_KEY=...
 ANTHROPIC_API_KEY=...
-GROQ_API_KEY=...
+GEMINI_API_KEY=...
+GROQ_API_KEY=...  # Fastest inference (~1s with 70B models)
 ```
 
 ---
@@ -257,12 +342,12 @@ GROQ_API_KEY=...
 
 ### LLM Inference Optimization (Mac M2 / Apple Silicon)
 
-| Optimization | Latency | Improvement | Setup Time |
-|--------------|---------|-------------|------------|
-| **Baseline** (tinyllama/Docker/CPU) | 27s | - | - |
-| **Quick Win** (phi3/Docker/CPU) | 8-10s | **63% faster** | 5 min |
-| **Recommended** (phi3/Native/Metal GPU) | 3-5s | **82% faster** | 30 min |
-| **Fastest** (llama3.2/Native/Metal GPU) | 1-2s | **92% faster** | 30 min |
+| Optimization | Latency | Notes |
+|--------------|---------|-------|
+| **Current Default** (llama3.2/Native/Metal GPU) | 1-2s | Production-ready |
+| phi3/Native/Metal GPU | 3-5s | Alternative option |
+| Docker/CPU (not recommended) | 27s | 92% slower |
+| **Groq API** (llama-3.3-70b) | 0.5-1s | Fastest, free tier available |
 
 ### Component Latency Breakdown
 
@@ -283,21 +368,20 @@ GROQ_API_KEY=...
 | OpenAI | gpt-4o-mini | 1-2s | ~$0.30 |
 | Anthropic | claude-3-haiku | 1-2s | ~$0.50 |
 
-### Mac M2 Quick Win
+### Mac M2 Native Setup (Default)
 
 ```bash
-# Native Ollama + Metal GPU (recommended)
+# Native Ollama + Metal GPU (already the default)
 brew install ollama
 ollama serve &
-ollama pull llama3.2
-ollama pull nomic-embed-text
+ollama pull llama3.2          # Default extraction/chat model
+ollama pull nomic-embed-text  # Default embedding model
 
-# Update config
-OLLAMA_BASE_URL=http://localhost:11434
-CHAT_MODEL=llama3.2
+# Start the application
+./run-smart-notebook.sh
 ```
 
-Result: 27s -> 1-2s latency
+Result: 1-2s latency with Metal GPU acceleration
 
 ### System Requirements
 
@@ -336,9 +420,9 @@ smart-notebook/
 ### Worker not starting
 
 ```bash
-curl http://localhost:11434/api/tags  # Check Ollama
-docker exec sn-ollama ollama list     # Check models
-tail -f worker.log                     # View logs
+curl http://localhost:11434/api/tags  # Check Ollama is running
+ollama list                            # Check installed models
+tail -f worker/worker.log              # View worker logs
 ```
 
 ### Database issues
@@ -364,10 +448,11 @@ docker build -t smart-notebook-worker:latest -f worker/Dockerfile .
 
 ### Considerations
 
-- Use managed PostgreSQL (RDS, Cloud SQL)
-- Enable pgvector extension
-- API-based LLMs for scale (Groq free tier: 14,400 req/day)
-- Export logs to ELK/Loki
+- Use managed PostgreSQL (RDS, Cloud SQL) with pgvector extension
+- API-based LLMs for scale:
+  - Groq free tier: 14,400 req/day, ~0.5-1s latency
+  - OpenAI gpt-4o-mini: ~$0.30/1K queries
+- Export logs to ELK/Loki (structured JSON logging ready)
 - Add Prometheus metrics (future)
 
 ---
@@ -382,11 +467,12 @@ docker build -t smart-notebook-worker:latest -f worker/Dockerfile .
 - E2E CI tests
 - Few-shot RAG prompting
 
-### Phase 2 - In Progress
+### Phase 2 - Complete
 
-- **Performance**: Native Ollama + Metal GPU (82-92% faster)
-- **Groq Provider**: ~1s inference with 70B models
+- **Performance**: Native Ollama + Metal GPU (92% faster - 1-2s latency)
+- **Groq Provider**: ~0.5-1s inference with 70B models (free tier available)
 - **MMR Retrieval**: Maximal Marginal Relevance for diverse results (+20% quality)
+- **Embedding Cache**: In-memory + DB cache (saves 100-240ms per cached query)
 - **Chunk Deduplication**: SHA-256 hashing (-20% storage)
 
 ### Phase 3 - Planned
@@ -464,3 +550,5 @@ MIT License - see LICENSE file
 **Built for production-grade RAG systems**
 
 **Version**: 2.0 | **Status**: Production-Ready | **Updated**: Feb 2026
+
+

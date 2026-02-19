@@ -3,11 +3,13 @@ package org.sirohi.smartnotebook.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.sirohi.smartnotebook.dto.TaskStatusResponse;
+import org.sirohi.smartnotebook.logging.StructuredLogger;
 import org.sirohi.smartnotebook.model.Document;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -20,6 +22,8 @@ import java.util.UUID;
 @Service
 public class IngestionService {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(IngestionService.class);
+
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
 
@@ -29,9 +33,22 @@ public class IngestionService {
     }
 
     public UUID enqueue(Document doc, Map<String, Object> configOverride) {
+        return enqueueInternal(doc, configOverride, "FULL_INGESTION", 0, null, false);
+    }
+
+    public UUID enqueueReprocessing(Document doc, Map<String, Object> configOverride, String reason) {
+        return enqueueInternal(doc, configOverride, "REPROCESSING", 1, reason, true);
+    }
+
+    private UUID enqueueInternal(Document doc,
+                                 Map<String, Object> configOverride,
+                                 String taskType,
+                                 int priority,
+                                 String reason,
+                                 boolean dedupeQueuedTasks) {
         UUID taskId = UUID.randomUUID();
 
-        Map<String, Object> config = new java.util.HashMap<>();
+        Map<String, Object> config = new HashMap<>();
         config.put("chunk_size", 512);
         config.put("chunk_overlap", 50);
         // Default embedding model will be overridden by worker config if not present
@@ -42,28 +59,52 @@ public class IngestionService {
             config.putAll(configOverride);
         }
 
-        Map<String, Object> payload = Map.of(
-                "document_id", doc.getId().toString(),
-                "source_path", doc.getFilePath(),
-                "content_type", doc.getContentType(),
-                "config", config);
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("document_id", doc.getId().toString());
+        payload.put("source_path", doc.getFilePath());
+        payload.put("content_type", doc.getContentType());
+        payload.put("config", config);
+        if (reason != null && !reason.isBlank()) {
+            payload.put("reprocess_reason", reason);
+        }
+
+        int dedupedTasks = 0;
+        if (dedupeQueuedTasks) {
+            dedupedTasks = jdbc.update("""
+                    DELETE FROM ingestion_tasks
+                    WHERE document_id = ?
+                      AND status IN ('PENDING', 'FAILED')
+                    """, doc.getId());
+        }
 
         jdbc.update("""
-                INSERT INTO ingestion_tasks (id, document_id, payload)
-                VALUES (?, ?, ?::jsonb)
+                INSERT INTO ingestion_tasks (id, document_id, task_type, priority, payload)
+                VALUES (?, ?, ?, ?, ?::jsonb)
                 """,
                 taskId,
                 doc.getId(),
+                taskType,
+                priority,
                 toJson(payload));
+
+        StructuredLogger.info(log, "ingestion_task_enqueued")
+                .field("task_id", taskId)
+                .field("document_id", doc.getId())
+                .field("task_type", taskType)
+                .field("priority", priority)
+                .field("reprocess_reason", reason)
+                .field("deduped_queued_tasks", dedupedTasks)
+                .field("config", config)
+                .log();
 
         return taskId;
     }
 
     public Optional<TaskStatusResponse> getStatus(UUID taskId) {
         try {
-            return Optional.of(jdbc.queryForObject("""
+            TaskStatusResponse response = jdbc.queryForObject("""
                     SELECT id, document_id, status, result, error_message,
-                           retry_count, created_at, updated_at, completed_at
+                           error_details, retry_count, created_at, updated_at, completed_at
                     FROM ingestion_tasks WHERE id = ?
                     """,
                     (rs, rowNum) -> new TaskStatusResponse(
@@ -72,13 +113,27 @@ public class IngestionService {
                             rs.getString("status"),
                             parseJson(rs.getString("result")),
                             rs.getString("error_message"),
+                            parseJson(rs.getString("error_details")),
                             rs.getInt("retry_count"),
                             rs.getTimestamp("created_at").toInstant(),
                             rs.getTimestamp("updated_at").toInstant(),
                             rs.getTimestamp("completed_at") != null
                                     ? rs.getTimestamp("completed_at").toInstant()
                                     : null),
-                    taskId));
+                    taskId);
+
+            if ("FAILED".equalsIgnoreCase(response.status()) || "DEAD_LETTER".equalsIgnoreCase(response.status())) {
+                StructuredLogger.warn(log, "ingestion_task_failed_status")
+                        .field("task_id", response.taskId())
+                        .field("document_id", response.documentId())
+                        .field("status", response.status())
+                        .field("retry_count", response.retryCount())
+                        .field("error_message", response.errorMessage())
+                        .field("error_details", response.errorDetails())
+                        .log();
+            }
+
+            return Optional.of(response);
         } catch (EmptyResultDataAccessException e) {
             return Optional.empty();
         }

@@ -10,6 +10,7 @@ public record TaskStatusResponse(
         String status,
         Map<String, Object> result,
         String errorMessage,
+        Map<String, Object> errorDetails,
         int retryCount,
         Instant createdAt,
         Instant updatedAt,

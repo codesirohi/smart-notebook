@@ -11,8 +11,9 @@ No branching, no conditionals, no cycles - just a simple sequence of steps.
 """
 
 import time
-from typing import Protocol
+from typing import Any, Dict, Protocol
 from abc import abstractmethod
+from contextlib import nullcontext
 
 from state import IngestionState
 from config import config
@@ -27,6 +28,56 @@ except ImportError:
     import logging
     logger = logging.getLogger(__name__)
     STRUCTURED_LOGGING = False
+
+
+def _log_fields(state: IngestionState, **extra: Any) -> Dict[str, Any]:
+    """Build consistent correlation fields for every pipeline log event."""
+    fields: Dict[str, Any] = {
+        "task_id": state.get("task_id"),
+        "document_id": state.get("document_id"),
+        "worker_id": state.get("worker_id"),
+        "retry_count": state.get("retry_count"),
+        "current_step": state.get("current_step"),
+        "pipeline_status": state.get("status"),
+    }
+    fields.update(extra)
+    return {k: v for k, v in fields.items() if v is not None}
+
+
+def _persist_task_progress(state: IngestionState, phase: str, **extra: Any) -> None:
+    """
+    Persist stage-level progress into ingestion_tasks.result while task is PROCESSING.
+    """
+    conn = state.get("db_conn")
+    task_id = state.get("task_id")
+    if conn is None or not task_id:
+        return
+
+    payload: Dict[str, Any] = {
+        "task_id": str(task_id),
+        "document_id": state.get("document_id"),
+        "worker_id": state.get("worker_id"),
+        "pipeline_status": phase,
+        "current_step": state.get("current_step"),
+        "step_timings": state.get("step_timings", {}),
+        "errors": state.get("errors", []),
+        "updated_at_epoch_ms": int(time.time() * 1000),
+    }
+    payload.update({k: v for k, v in extra.items() if v is not None})
+
+    try:
+        from db import update_task_progress
+        update_task_progress(conn, task_id, payload)
+    except Exception as e:
+        logger.warning(
+            "task_progress_update_failed",
+            **_log_fields(
+                state,
+                phase=phase,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            ),
+        )
 
 
 # ─── Pipeline Step Protocol ───
@@ -72,9 +123,11 @@ class ExtractStep:
             # 1. Basic text extraction (PyPDF2/Text/Markdown)
             logger.info(
                 "extracting_text",
-                document_id=doc_id,
+                **_log_fields(
+                    state,
                 source_path=source_path,
                 content_type=content_type
+                )
             )
 
             extract_start = time.time()
@@ -86,19 +139,23 @@ class ExtractStep:
 
             logger.info(
                 "text_extracted",
-                document_id=doc_id,
+                **_log_fields(
+                    state,
                 text_length=len(raw_text),
                 duration_ms=extract_duration,
                 metadata=basic_meta
+                )
             )
 
             # 2. Structured metadata extraction (LLM-based)
             extraction_model = state['config'].get('extraction_model', config.extraction_model)
             logger.info(
                 "extracting_metadata",
-                document_id=doc_id,
+                **_log_fields(
+                    state,
                 model=extraction_model,
                 text_sample_length=min(2000, len(raw_text))
+                )
             )
 
             meta_start = time.time()
@@ -111,11 +168,13 @@ class ExtractStep:
             total_duration = int((time.time() - start_time) * 1000)
             logger.info(
                 "extract_step_completed",
-                document_id=doc_id,
+                **_log_fields(
+                    state,
                 total_duration_ms=total_duration,
                 text_extraction_ms=extract_duration,
                 metadata_extraction_ms=meta_duration,
                 final_metadata=final_meta
+                )
             )
 
             return {
@@ -129,11 +188,13 @@ class ExtractStep:
             duration = int((time.time() - start_time) * 1000)
             logger.error(
                 "extract_step_failed",
-                document_id=doc_id,
+                **_log_fields(
+                    state,
                 error_type=type(e).__name__,
                 error_message=str(e),
                 duration_ms=duration,
                 exc_info=True
+                )
             )
             return {
                 **state,
@@ -166,10 +227,12 @@ class ChunkStep:
 
             logger.info(
                 "chunking_text",
-                document_id=doc_id,
+                **_log_fields(
+                    state,
                 text_length=len(state["raw_text"]),
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap
+                )
             )
 
             chunks_obj = chunk_text(
@@ -199,11 +262,13 @@ class ChunkStep:
 
             logger.info(
                 "chunk_step_completed",
-                document_id=doc_id,
+                **_log_fields(
+                    state,
                 chunks_created=len(chunks_list),
                 total_tokens=total_tokens,
                 avg_tokens_per_chunk=avg_tokens,
                 duration_ms=duration
+                )
             )
 
             return {**state, "chunks": chunks_list, "status": "CHUNKED"}
@@ -212,11 +277,13 @@ class ChunkStep:
             duration = int((time.time() - start_time) * 1000)
             logger.error(
                 "chunk_step_failed",
-                document_id=doc_id,
+                **_log_fields(
+                    state,
                 error_type=type(e).__name__,
                 error_message=str(e),
                 duration_ms=duration,
                 exc_info=True
+                )
             )
             return {
                 **state,
@@ -248,10 +315,12 @@ class EmbedStep:
 
             logger.info(
                 "embedding_chunks",
-                document_id=doc_id,
+                **_log_fields(
+                    state,
                 model=model,
                 provider=provider,
                 chunk_count=len(state["chunks"])
+                )
             )
 
             embeddings_model = LLMFactory.create_embeddings(provider, model)
@@ -274,18 +343,23 @@ class EmbedStep:
                     duration_ms=embed_duration,
                     success=True,
                     chunks=len(embeddings),
-                    embedding_dimensions=len(embeddings[0]) if embeddings else 0
+                    embedding_dimensions=len(embeddings[0]) if embeddings else 0,
+                    task_id=state.get("task_id"),
+                    document_id=state.get("document_id"),
+                    current_step=state.get("current_step")
                 )
 
             logger.info(
                 "embed_step_completed",
-                document_id=doc_id,
+                **_log_fields(
+                    state,
                 embeddings_generated=len(embeddings),
                 embedding_dimensions=len(embeddings[0]) if embeddings else 0,
                 api_duration_ms=embed_duration,
                 total_duration_ms=total_duration,
                 model=model,
                 provider=provider
+                )
             )
 
             return {**state, "embeddings": embeddings, "status": "EMBEDDED"}
@@ -294,12 +368,14 @@ class EmbedStep:
             duration = int((time.time() - start_time) * 1000)
             logger.error(
                 "embed_step_failed",
-                document_id=doc_id,
+                **_log_fields(
+                    state,
                 model=state['config'].get('embedding_model', config.embedding_model),
                 error_type=type(e).__name__,
                 error_message=str(e),
                 duration_ms=duration,
                 exc_info=True
+                )
             )
             return {
                 **state,
@@ -323,15 +399,15 @@ class StoreStep:
         doc_id = state["document_id"]
 
         try:
-            from db import get_connection, store_chunks, update_document_status
+            from db import get_pooled_connection, store_chunks, update_document_status
 
             logger.info(
                 "storing_to_database",
-                document_id=doc_id,
+                **_log_fields(
+                    state,
                 chunks_to_store=len(state["chunks"])
+                )
             )
-
-            conn = get_connection()
 
             # Prepare chunk records
             chunk_records = []
@@ -345,33 +421,37 @@ class StoreStep:
                     'metadata': chunk["metadata"]
                 })
 
-            # Store chunks
-            store_start = time.time()
-            store_chunks(conn, doc_id, chunk_records)
-            store_duration = int((time.time() - store_start) * 1000)
+            existing_conn = state.get("db_conn")
+            conn_context = nullcontext(existing_conn) if existing_conn is not None else get_pooled_connection()
 
-            # Update document with metadata
-            update_start = time.time()
-            update_document_status(
-                conn,
-                doc_id,
-                "INDEXED",
-                raw_content=state["raw_text"],
-                metadata=state["metadata"]
-            )
-            update_duration = int((time.time() - update_start) * 1000)
+            with conn_context as conn:
+                # Store chunks
+                store_start = time.time()
+                store_chunks(conn, doc_id, chunk_records)
+                store_duration = int((time.time() - store_start) * 1000)
 
-            conn.close()
+                # Update document with metadata
+                update_start = time.time()
+                update_document_status(
+                    conn,
+                    doc_id,
+                    "INDEXED",
+                    raw_content=state["raw_text"],
+                    metadata=state["metadata"]
+                )
+                update_duration = int((time.time() - update_start) * 1000)
 
             total_duration = int((time.time() - start_time) * 1000)
 
             logger.info(
                 "store_step_completed",
-                document_id=doc_id,
+                **_log_fields(
+                    state,
                 chunks_stored=len(chunk_records),
                 store_chunks_ms=store_duration,
                 update_document_ms=update_duration,
                 total_duration_ms=total_duration
+                )
             )
 
             return {**state, "status": "COMPLETED"}
@@ -380,11 +460,13 @@ class StoreStep:
             duration = int((time.time() - start_time) * 1000)
             logger.error(
                 "store_step_failed",
-                document_id=doc_id,
+                **_log_fields(
+                    state,
                 error_type=type(e).__name__,
                 error_message=str(e),
                 duration_ms=duration,
                 exc_info=True
+                )
             )
             return {
                 **state,
@@ -414,7 +496,7 @@ class IngestionPipeline:
             EmbedStep(),
             StoreStep()
         ]
-        logger.info(f"Pipeline initialized with {len(self.steps)} steps")
+        logger.info("pipeline_initialized", steps=self.get_step_names(), total_steps=len(self.steps))
 
     def execute(self, initial_state: IngestionState) -> IngestionState:
         """
@@ -426,72 +508,140 @@ class IngestionPipeline:
         Returns:
             Final state with status "COMPLETED" or "FAILED"
         """
-        state = initial_state
-        doc_id = state.get("document_id", "unknown")
+        state = {**initial_state}
+        state["step_timings"] = dict(state.get("step_timings", {}))
         start_time = time.time()
 
         logger.info(
             "pipeline_started",
-            document_id=doc_id,
-            source_path=state.get("source_path"),
-            content_type=state.get("content_type"),
-            steps=self.get_step_names()
+            **_log_fields(
+                state,
+                source_path=state.get("source_path"),
+                content_type=state.get("content_type"),
+                steps=self.get_step_names(),
+                total_steps=len(self.steps),
+            ),
+        )
+        _persist_task_progress(
+            state,
+            "RUNNING",
+            total_steps=len(self.steps),
+            event="pipeline_started",
         )
 
-        step_timings = {}
+        step_timings = state["step_timings"]
 
-        for step in self.steps:
+        for step_index, step in enumerate(self.steps, start=1):
             # Skip remaining steps if already failed
             if state["status"] == "FAILED":
                 logger.warning(
                     "skipping_step",
-                    document_id=doc_id,
-                    step=step.name,
-                    reason="pipeline_already_failed"
+                    **_log_fields(
+                        state,
+                        step=step.name,
+                        step_index=step_index,
+                        reason="pipeline_already_failed",
+                    ),
                 )
                 break
 
+            state["current_step"] = step.name
             step_start = time.time()
-            logger.debug("executing_step", document_id=doc_id, step=step.name)
+            logger.info(
+                "pipeline_step_started",
+                **_log_fields(
+                    state,
+                    step=step.name,
+                    step_index=step_index,
+                    total_steps=len(self.steps),
+                ),
+            )
+            _persist_task_progress(
+                state,
+                "RUNNING",
+                step=step.name,
+                step_index=step_index,
+                total_steps=len(self.steps),
+                event="step_started",
+            )
 
             try:
                 state = step.process(state)
                 step_duration = int((time.time() - step_start) * 1000)
                 step_timings[step.name] = step_duration
+                state["step_timings"] = step_timings
 
                 if state["status"] == "FAILED":
                     logger.error(
                         "step_failed",
-                        document_id=doc_id,
+                        **_log_fields(
+                            state,
+                            step=step.name,
+                            step_index=step_index,
+                            duration_ms=step_duration,
+                            errors=state["errors"],
+                        ),
+                    )
+                    _persist_task_progress(
+                        state,
+                        "FAILED",
                         step=step.name,
-                        errors=state['errors'],
-                        duration_ms=step_duration
+                        step_index=step_index,
+                        duration_ms=step_duration,
+                        event="step_failed",
+                        errors=state["errors"],
                     )
                     break
 
-                logger.debug(
-                    "step_completed",
-                    document_id=doc_id,
+                logger.info(
+                    "pipeline_step_completed",
+                    **_log_fields(
+                        state,
+                        step=step.name,
+                        step_index=step_index,
+                        duration_ms=step_duration,
+                    ),
+                )
+                _persist_task_progress(
+                    state,
+                    "RUNNING",
                     step=step.name,
-                    duration_ms=step_duration
+                    step_index=step_index,
+                    duration_ms=step_duration,
+                    event="step_completed",
                 )
 
             except Exception as e:
                 # Catch any unexpected errors not handled by the step itself
                 step_duration = int((time.time() - step_start) * 1000)
                 step_timings[step.name] = step_duration
+                state["step_timings"] = step_timings
 
                 logger.error(
                     "step_unexpected_error",
-                    document_id=doc_id,
-                    step=step.name,
-                    error_type=type(e).__name__,
-                    error_message=str(e),
-                    duration_ms=step_duration,
-                    exc_info=True
+                    **_log_fields(
+                        state,
+                        step=step.name,
+                        step_index=step_index,
+                        error_type=type(e).__name__,
+                        error_message=str(e),
+                        duration_ms=step_duration,
+                        exc_info=True,
+                    ),
                 )
                 state["errors"].append(f"Unexpected: {step.name}: {str(e)}")
                 state["status"] = "FAILED"
+                _persist_task_progress(
+                    state,
+                    "FAILED",
+                    step=step.name,
+                    step_index=step_index,
+                    duration_ms=step_duration,
+                    event="step_unexpected_error",
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    errors=state["errors"],
+                )
                 break
 
         # Final status log
@@ -500,20 +650,42 @@ class IngestionPipeline:
         if state["status"] == "COMPLETED":
             logger.info(
                 "pipeline_completed",
-                document_id=doc_id,
+                **_log_fields(
+                    state,
+                    total_duration_ms=total_duration,
+                    step_timings=step_timings,
+                    chunks_created=len(state.get("chunks", [])),
+                    metadata_extracted=bool(state.get("metadata")),
+                ),
+            )
+            _persist_task_progress(
+                state,
+                "COMPLETED",
+                event="pipeline_completed",
                 total_duration_ms=total_duration,
                 step_timings=step_timings,
                 chunks_created=len(state.get("chunks", [])),
-                metadata_extracted=bool(state.get("metadata"))
+                metadata_extracted=bool(state.get("metadata")),
             )
         else:
             logger.error(
                 "pipeline_failed",
-                document_id=doc_id,
+                **_log_fields(
+                    state,
+                    total_duration_ms=total_duration,
+                    step_timings=step_timings,
+                    errors=state["errors"],
+                    failed_at_status=state.get("status"),
+                ),
+            )
+            _persist_task_progress(
+                state,
+                "FAILED",
+                event="pipeline_failed",
                 total_duration_ms=total_duration,
                 step_timings=step_timings,
-                errors=state['errors'],
-                failed_at_status=state.get("status")
+                errors=state["errors"],
+                failed_at_status=state.get("status"),
             )
 
         return state

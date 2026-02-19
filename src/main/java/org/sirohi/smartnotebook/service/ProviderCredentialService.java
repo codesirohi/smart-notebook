@@ -2,8 +2,10 @@ package org.sirohi.smartnotebook.service;
 
 import org.sirohi.smartnotebook.dto.ProviderStatusResponse;
 import org.sirohi.smartnotebook.dto.ProviderTestResponse;
+import org.sirohi.smartnotebook.exception.BadRequestException;
 import org.sirohi.smartnotebook.exception.ResourceNotFoundException;
 import org.sirohi.smartnotebook.model.ProviderCredential;
+import org.sirohi.smartnotebook.repository.PipelineModelConfigRepository;
 import org.sirohi.smartnotebook.repository.ProviderCredentialRepository;
 import org.sirohi.smartnotebook.security.CredentialEncryption;
 import org.slf4j.Logger;
@@ -22,6 +24,7 @@ import java.util.List;
  * - API keys encrypted at rest using AES-256-GCM
  * - Keys masked in all responses
  * - Audit logging for all credential changes
+ * - Validates credentials before saving
  */
 @Service
 public class ProviderCredentialService {
@@ -31,12 +34,18 @@ public class ProviderCredentialService {
     private final ProviderCredentialRepository credentialRepository;
     private final CredentialEncryption encryption;
     private final WebClient webClient;
+    private final CredentialProvider credentialProvider;
+    private final PipelineModelConfigRepository pipelineConfigRepository;
 
     public ProviderCredentialService(ProviderCredentialRepository credentialRepository,
-                                     CredentialEncryption encryption) {
+                                     CredentialEncryption encryption,
+                                     @org.springframework.context.annotation.Lazy CredentialProvider credentialProvider,
+                                     PipelineModelConfigRepository pipelineConfigRepository) {
         this.credentialRepository = credentialRepository;
         this.encryption = encryption;
         this.webClient = WebClient.builder().build();
+        this.credentialProvider = credentialProvider;
+        this.pipelineConfigRepository = pipelineConfigRepository;
     }
 
     /**
@@ -61,6 +70,8 @@ public class ProviderCredentialService {
 
     /**
      * Update credentials for a provider.
+     * Validates the credentials before saving. If validation fails,
+     * credentials are NOT saved and an exception is thrown.
      */
     @Transactional
     public ProviderStatusResponse updateCredentials(String providerName, String apiKey, String baseUrl) {
@@ -69,7 +80,18 @@ public class ProviderCredentialService {
         ProviderCredential cred = credentialRepository.findByProviderName(providerName)
                 .orElseThrow(() -> new ResourceNotFoundException("Provider not found: " + providerName));
 
-        // Encrypt and store
+        // Set base URL if provided (needed for validation)
+        String effectiveBaseUrl = (baseUrl != null && !baseUrl.isBlank()) ? baseUrl : cred.getBaseUrl();
+
+        // Validate credentials BEFORE saving
+        ProviderTestResponse validationResult = validateCredentials(providerName, apiKey, effectiveBaseUrl);
+
+        if (!validationResult.success()) {
+            log.warn("Credential validation failed for provider {}: {}", providerName, validationResult.message());
+            throw new IllegalArgumentException("Invalid API key: " + validationResult.message());
+        }
+
+        // Validation passed - now save
         String encryptedKey = encryption.encrypt(apiKey);
         cred.setEncryptedApiKey(encryptedKey);
 
@@ -77,16 +99,123 @@ public class ProviderCredentialService {
             cred.setBaseUrl(baseUrl);
         }
 
-        // Mark as unknown until tested
-        cred.setValidationStatus("unknown");
+        cred.setValidationStatus("valid");
+        cred.setLastValidatedAt(OffsetDateTime.now());
         cred.setEnabled(true);
 
         cred = credentialRepository.save(cred);
 
-        log.info("Credentials updated for provider: {} (encrypted: {})",
-                providerName, encryption.isEncryptionEnabled());
+        // Invalidate cache so gateways pick up new credentials
+        credentialProvider.invalidateCache(providerName);
+
+        log.info("Credentials validated and saved for provider: {}", providerName);
 
         return toStatusResponse(cred);
+    }
+
+    /**
+     * Validate credentials without saving.
+     */
+    private ProviderTestResponse validateCredentials(String providerName, String apiKey, String baseUrl) {
+        long startTime = System.currentTimeMillis();
+
+        try {
+            boolean success = switch (providerName) {
+                case "ollama" -> testOllamaWithUrl(baseUrl);
+                case "openai" -> testOpenAIWithKey(apiKey);
+                case "anthropic" -> testAnthropicWithKey(apiKey);
+                case "google" -> testGoogleWithKey(apiKey);
+                case "groq" -> testGroqWithKey(apiKey);
+                default -> false;
+            };
+
+            int latencyMs = (int) (System.currentTimeMillis() - startTime);
+
+            if (success) {
+                return ProviderTestResponse.success(providerName, latencyMs, List.of());
+            } else {
+                return ProviderTestResponse.failure(providerName, "Connection test failed");
+            }
+        } catch (Exception e) {
+            log.warn("Credential validation error for {}: {}", providerName, e.getMessage());
+            return ProviderTestResponse.failure(providerName, e.getMessage());
+        }
+    }
+
+    private boolean testOllamaWithUrl(String baseUrl) {
+        String url = (baseUrl != null) ? baseUrl : "http://localhost:11434";
+        try {
+            String response = webClient.get()
+                    .uri(url + "/api/tags")
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+            return response != null && response.contains("models");
+        } catch (Exception e) {
+            log.debug("Ollama test failed: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean testOpenAIWithKey(String apiKey) {
+        try {
+            String response = webClient.get()
+                    .uri("https://api.openai.com/v1/models")
+                    .header("Authorization", "Bearer " + apiKey)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+            return response != null && response.contains("data");
+        } catch (Exception e) {
+            log.debug("OpenAI test failed: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean testAnthropicWithKey(String apiKey) {
+        try {
+            // Anthropic: test by calling models endpoint
+            String response = webClient.get()
+                    .uri("https://api.anthropic.com/v1/models")
+                    .header("x-api-key", apiKey)
+                    .header("anthropic-version", "2023-06-01")
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+            return response != null && response.contains("data");
+        } catch (Exception e) {
+            log.debug("Anthropic test failed: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean testGoogleWithKey(String apiKey) {
+        try {
+            String response = webClient.get()
+                    .uri("https://generativelanguage.googleapis.com/v1beta/models?key=" + apiKey)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+            return response != null && response.contains("models");
+        } catch (Exception e) {
+            log.debug("Google test failed: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean testGroqWithKey(String apiKey) {
+        try {
+            String response = webClient.get()
+                    .uri("https://api.groq.com/openai/v1/models")
+                    .header("Authorization", "Bearer " + apiKey)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+            return response != null && response.contains("data");
+        } catch (Exception e) {
+            log.debug("Groq test failed: {}", e.getMessage());
+            return false;
+        }
     }
 
     /**
@@ -101,6 +230,9 @@ public class ProviderCredentialService {
         }
 
         credentialRepository.clearCredentials(providerName);
+
+        // Invalidate cache
+        credentialProvider.invalidateCache(providerName);
 
         log.info("Credentials deleted for provider: {}", providerName);
     }
@@ -149,14 +281,27 @@ public class ProviderCredentialService {
     @Transactional
     public ProviderStatusResponse setEnabled(String providerName, boolean enabled) {
         log.info("{} provider: {}", enabled ? "Enabling" : "Disabling", providerName);
+        String normalizedProvider = providerName.trim().toLowerCase();
 
-        if (!credentialRepository.existsByProviderName(providerName)) {
+        if (!credentialRepository.existsByProviderName(normalizedProvider)) {
             throw new ResourceNotFoundException("Provider not found: " + providerName);
         }
+        if (!enabled) {
+            int inUseCount = pipelineConfigRepository.findByProviderNameAndActiveTrue(normalizedProvider).size();
+            if (inUseCount > 0) {
+                throw new BadRequestException(
+                        "Cannot disable provider '" + normalizedProvider + "' because it is used in "
+                                + inUseCount
+                                + " active pipeline configuration(s). Update pipeline model config first.");
+            }
+        }
 
-        credentialRepository.setEnabled(providerName, enabled);
+        credentialRepository.setEnabled(normalizedProvider, enabled);
 
-        return getProvider(providerName);
+        // Invalidate cache
+        credentialProvider.invalidateCache(normalizedProvider);
+
+        return getProvider(normalizedProvider);
     }
 
     /**
@@ -199,88 +344,16 @@ public class ProviderCredentialService {
 
     private boolean testProviderConnection(ProviderCredential cred) {
         String providerName = cred.getProviderName();
+        String apiKey = cred.hasCredentials() ? encryption.decrypt(cred.getEncryptedApiKey()) : null;
+        String baseUrl = cred.getBaseUrl();
 
         return switch (providerName) {
-            case "ollama" -> testOllama(cred);
-            case "openai" -> testOpenAI(cred);
-            case "anthropic" -> testAnthropic(cred);
-            case "google" -> testGoogle(cred);
-            case "groq" -> testGroq(cred);
+            case "ollama" -> testOllamaWithUrl(baseUrl);
+            case "openai" -> testOpenAIWithKey(apiKey);
+            case "anthropic" -> testAnthropicWithKey(apiKey);
+            case "google" -> testGoogleWithKey(apiKey);
+            case "groq" -> testGroqWithKey(apiKey);
             default -> false;
         };
-    }
-
-    private boolean testOllama(ProviderCredential cred) {
-        String baseUrl = cred.getBaseUrl() != null ? cred.getBaseUrl() : "http://localhost:11434";
-        try {
-            String response = webClient.get()
-                    .uri(baseUrl + "/api/tags")
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-            return response != null && response.contains("models");
-        } catch (Exception e) {
-            log.debug("Ollama test failed: {}", e.getMessage());
-            return false;
-        }
-    }
-
-    private boolean testOpenAI(ProviderCredential cred) {
-        String apiKey = encryption.decrypt(cred.getEncryptedApiKey());
-        try {
-            String response = webClient.get()
-                    .uri("https://api.openai.com/v1/models")
-                    .header("Authorization", "Bearer " + apiKey)
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-            return response != null && response.contains("data");
-        } catch (Exception e) {
-            log.debug("OpenAI test failed: {}", e.getMessage());
-            return false;
-        }
-    }
-
-    private boolean testAnthropic(ProviderCredential cred) {
-        // Anthropic doesn't have a models endpoint, so we do a minimal completion
-        String apiKey = encryption.decrypt(cred.getEncryptedApiKey());
-        try {
-            // Just check if the API key format is valid
-            return apiKey != null && apiKey.startsWith("sk-ant-");
-        } catch (Exception e) {
-            log.debug("Anthropic test failed: {}", e.getMessage());
-            return false;
-        }
-    }
-
-    private boolean testGoogle(ProviderCredential cred) {
-        String apiKey = encryption.decrypt(cred.getEncryptedApiKey());
-        try {
-            String response = webClient.get()
-                    .uri("https://generativelanguage.googleapis.com/v1beta/models?key=" + apiKey)
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-            return response != null && response.contains("models");
-        } catch (Exception e) {
-            log.debug("Google test failed: {}", e.getMessage());
-            return false;
-        }
-    }
-
-    private boolean testGroq(ProviderCredential cred) {
-        String apiKey = encryption.decrypt(cred.getEncryptedApiKey());
-        try {
-            String response = webClient.get()
-                    .uri("https://api.groq.com/openai/v1/models")
-                    .header("Authorization", "Bearer " + apiKey)
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-            return response != null && response.contains("data");
-        } catch (Exception e) {
-            log.debug("Groq test failed: {}", e.getMessage());
-            return false;
-        }
     }
 }

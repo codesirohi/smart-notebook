@@ -9,6 +9,7 @@ on:
       - "scripts/**"
       - "pom.xml"
       - "docker-compose.yml"
+      - "docker-compose.ci.yml"
       - ".github/workflows/e2e-smoke.yml"
 
 jobs:
@@ -51,7 +52,7 @@ jobs:
           python-version: "3.12"
 
       - name: Start Docker dependencies
-        run: docker compose up -d postgres redis ollama
+        run: docker compose -f docker-compose.ci.yml up -d postgres ollama
 
       - name: Wait for dependency readiness
         shell: bash
@@ -63,7 +64,7 @@ jobs:
             fi
             sleep 2
           done
-          docker compose ps
+          docker compose -f docker-compose.ci.yml ps
 
       - name: Pull Ollama models
         shell: bash
@@ -119,7 +120,7 @@ jobs:
           echo "===== worker-ci.log ====="
           tail -n 300 worker-ci.log || true
           echo "===== docker compose ps ====="
-          docker compose ps || true
+          docker compose -f docker-compose.ci.yml ps || true
 
       - name: Cleanup
         if: always()
@@ -127,4 +128,4 @@ jobs:
         run: |
           if [ -f app.pid ]; then kill "$(cat app.pid)" 2>/dev/null || true; fi
           if [ -f worker.pid ]; then kill "$(cat worker.pid)" 2>/dev/null || true; fi
-          docker compose down -v || true
+          docker compose -f docker-compose.ci.yml down -v || true

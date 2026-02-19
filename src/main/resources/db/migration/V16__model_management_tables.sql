@@ -152,8 +152,10 @@ COMMENT ON COLUMN api_usage.estimated_cost_usd IS 'Estimated cost in USD based o
 
 -- Indexes for efficient quota checking and analytics
 CREATE INDEX idx_api_usage_provider_time ON api_usage(provider_name, request_timestamp DESC);
-CREATE INDEX idx_api_usage_daily ON api_usage(provider_name, DATE(request_timestamp));
-CREATE INDEX idx_api_usage_monthly ON api_usage(provider_name, DATE_TRUNC('month', request_timestamp));
+-- NOTE: DATE(timestamptz) / date_trunc(timestamptz) are STABLE (timezone-dependent),
+-- so we normalize to UTC first to keep index expressions IMMUTABLE.
+CREATE INDEX idx_api_usage_daily ON api_usage(provider_name, ((request_timestamp AT TIME ZONE 'UTC')::date));
+CREATE INDEX idx_api_usage_monthly ON api_usage(provider_name, DATE_TRUNC('month', request_timestamp AT TIME ZONE 'UTC'));
 CREATE INDEX idx_api_usage_notebook ON api_usage(notebook_id, request_timestamp DESC);
 
 -- ═══════════════════════════════════════════════════════════════════════════
