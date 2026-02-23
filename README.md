@@ -16,13 +16,14 @@ Smart Notebook is a production-grade RAG (Retrieval-Augmented Generation) system
 **Key Features**:
 - Notebook-scoped document organization
 - Async ingestion with Postgres-as-queue (SKIP LOCKED pattern)
-- Vector search (pgvector, 768-dim embeddings)
+- Vector search (pgvector, 768-dim embeddings) with **HNSW Indexing** for scale
 - MMR re-ranking for diverse retrieval results
 - Grounded RAG with citations (few-shot prompting)
 - Embedding cache (100-240ms savings per cached query)
 - Duplicate detection (SHA-256 checksum)
 - Structured logging (JSON/console)
 - Worker heartbeat monitoring
+- **Enterprise Resiliency**: Circuit Breakers & Retries (Resilience4j) on all LLM APIs
 - Connection pooling (ThreadedConnectionPool)
 - Multi-provider support (Ollama, OpenAI, Anthropic, Google, Groq)
 - E2E CI tests (GitHub Actions)
@@ -131,7 +132,7 @@ Python Worker
   - Connection pooling (ThreadedConnectionPool)
   |
   v
-Model Gateways
+Model Gateways (Hardened with Resilience4j Circuit Breakers & Retries)
   - Local Ollama (primary in local runs)
   - OpenAI / Anthropic / Google / Groq (via provider keys)
 ```
@@ -166,7 +167,7 @@ ollama pull llama3.2          # Chat/extraction model
 ollama pull nomic-embed-text  # Embedding model (768 dims)
 
 # 5. Start services
-./run-smart-notebook.sh
+scripts/run-smart-notebook.sh
 ```
 
 ### Verify
@@ -263,10 +264,17 @@ StructuredLogger.info(log, "query_completed")
 
 ## Testing
 
+Comprehensive test automation encompasses the core processing flow:
+
 ```bash
-# E2E smoke test
+# E2E Smoke Tests (Node.js)
+# Validates Notebook Deletion cascades and Chat retrieval
 node scripts/wait-for-ready.mjs
 node scripts/smart-notebook-e2e.mjs
+
+# Core Unit Tests (Java Spring Boot @WebMvcTest)
+# Validates Notebook, Document, and Query controller flows
+./mvnw clean test
 ```
 
 **CI**: `.github/workflows/e2e-smoke.yml`
@@ -378,7 +386,7 @@ ollama pull llama3.2          # Default extraction/chat model
 ollama pull nomic-embed-text  # Default embedding model
 
 # Start the application
-./run-smart-notebook.sh
+scripts/run-smart-notebook.sh
 ```
 
 Result: 1-2s latency with Metal GPU acceleration
@@ -397,18 +405,36 @@ Result: 1-2s latency with Metal GPU acceleration
 
 ```
 smart-notebook/
-├── src/main/java/                # Spring Boot
+├── src/main/java/                # Spring Boot API
 │   ├── controller/               # REST endpoints
 │   ├── service/                  # Business logic
 │   ├── gateway/                  # LLM integrations
 │   ├── logging/                  # Structured logging
 │   └── repository/               # Data access
-├── worker/                       # Python worker
-│   ├── worker.py                 # Main loop
-│   ├── pipeline.py               # Ingestion pipeline
-│   ├── db.py                     # Connection pooling
-│   └── llm_factory.py            # Provider factory
-├── scripts/                      # E2E tests
+├── worker/                       # Python worker (modular structure)
+│   ├── worker.py                 # Main entry point
+│   ├── config.py                 # Configuration singleton
+│   ├── state.py                  # Type definitions
+│   ├── core/                     # Core utilities
+│   │   ├── db.py                 # Connection pooling
+│   │   ├── logging_config.py     # Structured logging
+│   │   ├── chunker.py            # Text chunking
+│   │   ├── extractors.py         # Document extraction
+│   │   └── processor.py          # Document processor
+│   ├── llm/                      # LLM integrations
+│   │   ├── factory.py            # Provider factory
+│   │   ├── provider_registry.py  # Registry pattern
+│   │   └── ollama_client.py      # Ollama client
+│   └── pipeline/                 # Pipeline orchestration
+│       └── pipeline.py           # Ingestion pipeline
+├── scripts/                      # Shell scripts & E2E tests
+│   ├── run-smart-notebook.sh     # Main startup script
+│   ├── build.sh                  # Build script
+│   ├── dev.sh                    # Development mode
+│   ├── stop.sh                   # Stop all services
+│   └── smart-notebook-e2e.mjs    # E2E test runner
+├── docs/                         # Documentation
+├── data/                         # Data storage (cache, embeddings, vectordb)
 ├── .github/workflows/            # CI/CD
 └── docker-compose.yml            # Infrastructure
 ```

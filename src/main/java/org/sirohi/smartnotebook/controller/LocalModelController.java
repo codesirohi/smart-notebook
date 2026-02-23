@@ -7,6 +7,8 @@ import org.sirohi.smartnotebook.service.HardwareDetectionService;
 import org.sirohi.smartnotebook.service.LocalModelService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.sirohi.smartnotebook.exception.BadRequestException;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.List;
 
@@ -17,7 +19,8 @@ import java.util.List;
  * - GET /api/models/local - List all models
  * - GET /api/models/local/installed - List installed models
  * - GET /api/models/local/available - List available (not installed) models
- * - GET /api/models/local/recommendations - Get recommended models for this hardware
+ * - GET /api/models/local/recommendations - Get recommended models for this
+ * hardware
  * - GET /api/models/local/{modelName} - Get specific model details
  * - POST /api/models/local/{modelName}/install - Install a model
  * - DELETE /api/models/local/{modelName} - Uninstall a model
@@ -30,11 +33,20 @@ public class LocalModelController {
 
     private final LocalModelService modelService;
     private final HardwareDetectionService hardwareService;
+    private final boolean localModelsEnabled;
 
     public LocalModelController(LocalModelService modelService,
-                               HardwareDetectionService hardwareService) {
+            HardwareDetectionService hardwareService,
+            @Value("${app.features.local-models-enabled:true}") boolean localModelsEnabled) {
         this.modelService = modelService;
         this.hardwareService = hardwareService;
+        this.localModelsEnabled = localModelsEnabled;
+    }
+
+    private void checkFeatureFlag() {
+        if (!localModelsEnabled) {
+            throw new BadRequestException("Local models are disabled in this environment (Cloud Mode).");
+        }
     }
 
     /**
@@ -42,6 +54,8 @@ public class LocalModelController {
      */
     @GetMapping
     public List<LocalModelResponse> listAllModels() {
+        if (!localModelsEnabled)
+            return List.of();
         return modelService.listAllModels();
     }
 
@@ -50,6 +64,8 @@ public class LocalModelController {
      */
     @GetMapping("/installed")
     public List<LocalModelResponse> listInstalledModels() {
+        if (!localModelsEnabled)
+            return List.of();
         return modelService.listInstalledModels();
     }
 
@@ -58,6 +74,8 @@ public class LocalModelController {
      */
     @GetMapping("/available")
     public List<LocalModelResponse> listAvailableModels() {
+        if (!localModelsEnabled)
+            return List.of();
         return modelService.listAvailableModels();
     }
 
@@ -66,6 +84,8 @@ public class LocalModelController {
      */
     @GetMapping("/recommendations")
     public List<LocalModelResponse> getRecommendedModels() {
+        if (!localModelsEnabled)
+            return List.of();
         return modelService.listRecommendedModels();
     }
 
@@ -74,6 +94,8 @@ public class LocalModelController {
      */
     @GetMapping("/type/{modelType}")
     public List<LocalModelResponse> getModelsByType(@PathVariable String modelType) {
+        if (!localModelsEnabled)
+            return List.of();
         return modelService.getModelsByType(modelType);
     }
 
@@ -82,6 +104,7 @@ public class LocalModelController {
      */
     @GetMapping("/{modelName}")
     public LocalModelResponse getModel(@PathVariable String modelName) {
+        checkFeatureFlag();
         return modelService.getModel(modelName);
     }
 
@@ -90,6 +113,7 @@ public class LocalModelController {
      */
     @PostMapping("/{modelName}/install")
     public ResponseEntity<ModelInstallResponse> installModel(@PathVariable String modelName) {
+        checkFeatureFlag();
         ModelInstallResponse response = modelService.installModel(modelName);
 
         return switch (response.status()) {
@@ -105,6 +129,7 @@ public class LocalModelController {
      */
     @DeleteMapping("/{modelName}")
     public ResponseEntity<Void> uninstallModel(@PathVariable String modelName) {
+        checkFeatureFlag();
         modelService.uninstallModel(modelName);
         return ResponseEntity.noContent().build();
     }
@@ -114,6 +139,7 @@ public class LocalModelController {
      */
     @PostMapping("/sync")
     public ResponseEntity<Void> syncWithOllama() {
+        checkFeatureFlag();
         modelService.syncWithOllama();
         return ResponseEntity.ok().build();
     }
@@ -123,6 +149,7 @@ public class LocalModelController {
      */
     @GetMapping("/hardware")
     public HardwareInfoResponse getHardwareInfo() {
+        checkFeatureFlag();
         return hardwareService.getHardwareInfoResponse();
     }
 
@@ -131,6 +158,7 @@ public class LocalModelController {
      */
     @PostMapping("/hardware/refresh")
     public HardwareInfoResponse refreshHardware() {
+        checkFeatureFlag();
         hardwareService.refresh();
         return hardwareService.getHardwareInfoResponse();
     }

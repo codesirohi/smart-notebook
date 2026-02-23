@@ -9,6 +9,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 
 import java.util.HashMap;
 import java.util.List;
@@ -53,6 +55,8 @@ public class OpenAiGateway implements ModelGateway {
     }
 
     @Override
+    @Retry(name = "llmApi")
+    @CircuitBreaker(name = "llmApi")
     public CompletionResponse complete(CompletionRequest request) {
         if (!isEnabled())
             throw new ModelGatewayException("OpenAI provider is not enabled or API key is missing");
@@ -88,6 +92,8 @@ public class OpenAiGateway implements ModelGateway {
     }
 
     @Override
+    @Retry(name = "llmApi")
+    @CircuitBreaker(name = "llmApi")
     public Flux<String> completeStreaming(CompletionRequest request) {
         if (!isEnabled())
             return Flux.error(new ModelGatewayException("OpenAI provider is disabled"));
@@ -119,6 +125,8 @@ public class OpenAiGateway implements ModelGateway {
     }
 
     @Override
+    @Retry(name = "llmApi")
+    @CircuitBreaker(name = "llmApi")
     public EmbeddingResponse embed(EmbeddingRequest request) {
         if (!isEnabled())
             throw new ModelGatewayException("OpenAI provider is disabled");

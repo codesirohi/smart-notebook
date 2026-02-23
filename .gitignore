@@ -64,29 +64,12 @@ uploads/
 .env.local
 .env.*.local
 
-### Personal Documentation (Interview Prep) ###
-SMART_NOTEBOOK_BLUEPRINT.md
-Interview-Preparation-Guide.md
-PROJECT_ASSESSMENT.md
-QUICK_ASSESSMENT.md
-PRODUCTION_IMPROVEMENTS_2026_02_18.md
-IMPROVEMENTS_COMPLETE.md
-IMPROVEMENTS_SUMMARY.md
-TEST_RESULTS.md
-LIVE_TEST_ANALYSIS.md
-EMBEDDING_FIX_SUMMARY.md
-NEXT_STEPS_RECOMMENDATION.md
-FRONTEND_INTEGRATION_GUIDE.md
-FRONTEND_E2E_PROMPT.md
-ARCHITECTURE_REVIEW.md
-QUICK_IMPROVEMENTS.md
-STRUCTURED_LOGGING_PROGRESS.md
-MIGRATION_LANGGRAPH_TO_PIPELINE.md
-ADDING_NEW_PROVIDERS.md
-PERFORMANCE_OPTIMIZATION_PLAN.md
-MAC_M2_PERFORMANCE_GUIDE.md
-GIT_READY_SUMMARY.md
-GIT_CLEANUP_SUMMARY.md
+### Personal Documentation & Interview Prep ###
+docs/*
+!docs/screenshots/
+
+### Data Directory ###
+data/
 
 ### Test Files ###
 test_*.txt
@@ -96,8 +79,8 @@ dummy.txt
 Untitled_document.pdf
 
 ### Scripts (Personal) ###
-kill_port.sh
-verify_delete.sh
+scripts/kill_port.sh
+scripts/verify_delete.sh
 
 ### Temporary Files ###
 *.pid
@@ -105,3 +88,10 @@ verify_delete.sh
 *.swo
 *~
 .DS_Store
+
+### Additional Project / Scratch Files ###
+CLAUDE.md
+.claude/
+tasks/
+frontend_enums.ts
+verify_dynamic_models.py

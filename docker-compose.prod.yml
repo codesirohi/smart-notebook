@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      # Replace this with your actual Supabase connection string when running locally
+      - SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}
+      - SPRING_DATASOURCE_USERNAME=${SPRING_DATASOURCE_USERNAME}
+      - SPRING_DATASOURCE_PASSWORD=${SPRING_DATASOURCE_PASSWORD}
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}
+      - GDRIVE_FOLDER_ID=${GDRIVE_FOLDER_ID}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+    restart: unless-stopped
+    depends_on:
+      # In real production, we expect the remote database to be available, 
+      # but we don't declare it as a docker service here.
+      - worker # Just to ensure they both spin up together
+
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - EXTRACTION_MODEL=${EXTRACTION_MODEL:-llama-3.3-70b-versatile}
+      # Required since Ollama isn't available
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LOG_FORMAT=json
+    restart: unless-stopped

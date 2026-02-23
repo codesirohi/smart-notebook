@@ -12,6 +12,11 @@
 #   - Unloads models on shutdown (frees ~2-4GB RAM per model)
 # ==================================================================================
 
+# Change to project root
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_ROOT"
+
 # Model configuration (matches application.yml defaults)
 EXTRACTION_MODEL="${EXTRACTION_MODEL:-llama3.2}"
 EMBEDDING_MODEL="${EMBEDDING_MODEL:-nomic-embed-text}"
@@ -19,11 +24,11 @@ OLLAMA_URL="${OLLAMA_URL:-http://localhost:11434}"
 CLEANUP_DONE=0
 
 # 1. Set Java 21 Environment (Required)
-export JAVA_HOME="/opt/homebrew/opt/openjdk@21"
+export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk@21}"
 
 if [ ! -d "$JAVA_HOME" ]; then
     echo "❌ Error: Java 21 not found at $JAVA_HOME"
-    echo "Please install it using: brew install openjdk@21"
+    echo "Set JAVA_HOME environment variable or install: brew install openjdk@21"
     exit 1
 fi
 
@@ -201,7 +206,7 @@ if ! kill -0 "$WORKER_PID" 2>/dev/null; then
 fi
 
 # 11. Start Spring Boot
-./kill_port.sh
+scripts/kill_port.sh
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
 echo "  Performance: Native Ollama + Metal GPU"

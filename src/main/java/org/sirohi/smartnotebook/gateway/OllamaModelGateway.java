@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -29,7 +30,8 @@ import java.util.concurrent.TimeUnit;
  * Uses RestTemplate for blocking calls and WebClient for streaming.
  * Base URL is fetched from the database if configured.
  *
- * Performance: Connection pooling saves 10-50ms per request by reusing TCP connections.
+ * Performance: Connection pooling saves 10-50ms per request by reusing TCP
+ * connections.
  */
 @Component
 public class OllamaModelGateway implements ModelGateway {
@@ -42,13 +44,18 @@ public class OllamaModelGateway implements ModelGateway {
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate;
     private final HttpClient httpClient;
+    private final boolean localModelsEnabled;
 
     private static final Logger log = LoggerFactory.getLogger(OllamaModelGateway.class);
 
-    public OllamaModelGateway(ModelConfig modelConfig, CredentialProvider credentialProvider, ObjectMapper objectMapper) {
+    public OllamaModelGateway(ModelConfig modelConfig,
+            CredentialProvider credentialProvider,
+            ObjectMapper objectMapper,
+            @Value("${app.features.local-models-enabled:true}") boolean localModelsEnabled) {
         this.credentialProvider = credentialProvider;
         this.objectMapper = objectMapper;
         this.defaultModel = modelConfig.getDefaultExtractionModel();
+        this.localModelsEnabled = localModelsEnabled;
 
         // Blocking HTTP client
         this.restTemplate = new RestTemplate();
@@ -84,7 +91,7 @@ public class OllamaModelGateway implements ModelGateway {
     }
 
     private boolean isEnabled() {
-        return credentialProvider.isProviderEnabled(PROVIDER_ID);
+        return localModelsEnabled && credentialProvider.isProviderEnabled(PROVIDER_ID);
     }
 
     @Override
@@ -209,8 +216,10 @@ public class OllamaModelGateway implements ModelGateway {
     @Override
     @SuppressWarnings("unchecked")
     public ModelHealth health() {
+        if (!localModelsEnabled)
+            return new ModelHealth(false, PROVIDER_ID, defaultModel, "Disabled by Feature Flag (Cloud Mode)");
         if (!isEnabled())
-            return new ModelHealth(false, PROVIDER_ID, defaultModel, "Disabled");
+            return new ModelHealth(false, PROVIDER_ID, defaultModel, "Disabled in Database");
         try {
             restTemplate.getForObject(getBaseUrl() + "/api/tags", Map.class);
             return new ModelHealth(true, PROVIDER_ID, defaultModel, "Connected");

@@ -7,9 +7,14 @@
 #          Handles cleanup of both processes on exit.
 # ==================================================================================
 
-# 1. Configuration
-BACKEND_DIR="/Users/shubham/Documents/prep/smart-notebook"
-FRONTEND_DIR="/Users/shubham/Documents/prep/smart-notebook-frontend"
+# Change to project root
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_ROOT"
+
+# 1. Configuration - use relative paths from project root
+BACKEND_DIR="$PROJECT_ROOT"
+FRONTEND_DIR="${FRONTEND_DIR:-$(dirname "$PROJECT_ROOT")/smart-notebook-frontend}"
 
 echo "🚀 Starting Smart Notebook Services..."
 
@@ -21,6 +26,7 @@ fi
 
 if [ ! -d "$FRONTEND_DIR" ]; then
     echo "❌ Error: Frontend directory not found: $FRONTEND_DIR"
+    echo "   Set FRONTEND_DIR environment variable to the correct path"
     exit 1
 fi
 
@@ -28,7 +34,7 @@ fi
 cleanup() {
     echo ""
     echo "🛑 Shutting down services..."
-    
+
     # Kill backend (mvnw/java)
     if [ -n "$BACKEND_PID" ]; then
         echo "   - Stopping Backend (PID: $BACKEND_PID)..."
@@ -40,10 +46,10 @@ cleanup() {
         echo "   - Stopping Frontend (PID: $FRONTEND_PID)..."
         kill $FRONTEND_PID 2>/dev/null
     fi
-    
-    # Run the backend's cleanup logic (docker down) manually if needed, 
+
+    # Run the backend's cleanup logic (docker down) manually if needed,
     # but killing the process usually triggers its own shutdown hooks.
-    
+
     echo "✅ All services stopped."
 }
 
@@ -57,7 +63,7 @@ cd "$BACKEND_DIR"
 # Using run-smart-notebook.sh directly might trap signals and cause issues with backgrounding.
 # Let's run mvnw directly but ensure docker env is ready if needed.
 # Actually, run-smart-notebook.sh handles docker compose up. Let's use it.
-./run-smart-notebook.sh &
+scripts/run-smart-notebook.sh &
 BACKEND_PID=$!
 echo "   -> Backend started with PID: $BACKEND_PID"
 

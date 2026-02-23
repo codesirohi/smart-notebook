@@ -7,14 +7,19 @@
 # Use this if the application didn't close properly or to free up disk/RAM.
 # ==================================================================================
 
+# Change to project root
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_ROOT"
+
 echo "🧹 Starting Cleanup..."
 
-# 1. Stop and Remove Containers defined in compose.yaml
-if [ -f "compose.yaml" ]; then
+# 1. Stop and Remove Containers defined in docker-compose.yml
+if [ -f "docker-compose.yml" ] || [ -f "compose.yaml" ]; then
     echo "🐳 Stopping Docker Compose services..."
     docker compose down --remove-orphans
 else
-    echo "⚠️ compose.yaml not found. Skipping docker compose down."
+    echo "⚠️ docker-compose.yml not found. Skipping docker compose down."
 fi
 
 # 2. Force kill any lingering containers related to 'smart-notebook'
@@ -38,6 +43,12 @@ docker network prune -f
 echo ""
 echo "📊 Current Docker Disk Usage:"
 docker system df
+
+# 5. Clean uploads directory (local environment only)
+if [ "$ENV" = "local" ] || [ "$ENVIRONMENT" = "local" ]; then
+    echo "🗑️  Cleaning uploads directory..."
+    rm -f "$PROJECT_ROOT"/uploads/*
+fi
 
 echo ""
 echo "✅ Cleanup Complete! RAM and Disk resources freed."

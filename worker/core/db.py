@@ -2,8 +2,14 @@ import psycopg2
 from psycopg2.extras import RealDictCursor, Json
 from psycopg2.pool import ThreadedConnectionPool
 from contextlib import contextmanager
-from config import config
+import os
+import sys
 import logging
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from config import config
 import atexit
 import hashlib
 

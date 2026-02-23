@@ -6,6 +6,11 @@
 
 set -e
 
+# Change to project root
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_ROOT"
+
 # Function to kill all background jobs on exit
 cleanup() {
     echo ""
@@ -39,7 +44,7 @@ WORKER_PID=$!
 # 3. Start Spring Boot App in foreground
 echo "☕ [App] Starting Spring Boot application..."
 # Use -Dspring-boot.run.profiles=local to ensure local profile is active
-./kill_port.sh
+scripts/kill_port.sh
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
 
 # Wait for cleanup (mvnw usually blocks, but if it exits, we cleanup)

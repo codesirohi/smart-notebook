@@ -15,12 +15,17 @@ from typing import Any, Dict, Protocol
 from abc import abstractmethod
 from contextlib import nullcontext
 
+import sys
+import os
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from state import IngestionState
 from config import config
 
 # Use structured logging
 try:
-    from logging_config import get_logger, log_performance
+    from core.logging_config import get_logger, log_performance
     logger = get_logger(__name__)
     STRUCTURED_LOGGING = True
 except ImportError:
@@ -66,7 +71,7 @@ def _persist_task_progress(state: IngestionState, phase: str, **extra: Any) -> N
     payload.update({k: v for k, v in extra.items() if v is not None})
 
     try:
-        from db import update_task_progress
+        from core.db import update_task_progress
         update_task_progress(conn, task_id, payload)
     except Exception as e:
         logger.warning(
@@ -114,8 +119,8 @@ class ExtractStep:
         doc_id = state.get("document_id", "unknown")
 
         try:
-            from extractors import extract_text
-            from extractors_v2 import extract_metadata
+            from core.extractors import extract_text
+            from core.extractors_v2 import extract_metadata
 
             source_path = state['source_path']
             content_type = state['content_type']
@@ -218,7 +223,7 @@ class ChunkStep:
         doc_id = state.get("document_id", "unknown")
 
         try:
-            from chunker import chunk_text
+            from core.chunker import chunk_text
 
             cfg = state["config"]
             metadata = state["metadata"]
@@ -307,7 +312,7 @@ class EmbedStep:
         doc_id = state.get("document_id", "unknown")
 
         try:
-            from llm_factory import LLMFactory
+            from llm.factory import LLMFactory
 
             # Determine embedding model
             model = state['config'].get('embedding_model', config.embedding_model)
@@ -334,7 +339,7 @@ class EmbedStep:
 
             # Log API call for monitoring and cost tracking
             if STRUCTURED_LOGGING:
-                from logging_config import log_api_call
+                from core.logging_config import log_api_call
                 log_api_call(
                     logger,
                     provider=provider,
@@ -399,7 +404,7 @@ class StoreStep:
         doc_id = state["document_id"]
 
         try:
-            from db import get_pooled_connection, store_chunks, update_document_status
+            from core.db import get_pooled_connection, store_chunks, update_document_status
 
             logger.info(
                 "storing_to_database",

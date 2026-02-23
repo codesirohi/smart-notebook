@@ -1,10 +1,16 @@
 import json
 import logging
 import time
+import os
+import sys
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from config import config
-from extractors import extract_text
-from chunker import chunk_text
-from ollama_client import OllamaClient
+from core.extractors import extract_text
+from core.chunker import chunk_text
+from llm.ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
 

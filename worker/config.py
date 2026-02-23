@@ -17,6 +17,7 @@ class Config:
     ollama_url: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
     extraction_model: str = os.getenv("EXTRACTION_MODEL", "llama3.2")
+    local_models_enabled: bool = os.getenv("LOCAL_MODELS_ENABLED", "true").lower() == "true"
 
     # Providers (Dynamic)
     # Map of provider_name -> api_key

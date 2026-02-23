@@ -1,0 +1,33 @@
+# Production Profile configuration overrides
+
+spring:
+  datasource:
+    # URL is injected via SPRING_DATASOURCE_URL in Render
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+
+  docker:
+    compose:
+      # Disable Spring Boot's attempt to run local docker-compose
+      lifecycle-management: none
+
+  jpa:
+    hibernate:
+      ddl-auto: validate # Flyway handles schema, never let Hibernate auto-modify prod
+
+app:
+  features:
+    local-models-enabled: false
+  models:
+    # Disable local Ollama as it won't be available in standard cloud containers
+    ollama:
+      enabled: false
+
+# Configure logging for production JSON observability
+logging:
+  level:
+    org.sirohi.smartnotebook: INFO
+    org.springframework.web: WARN
+  # In a real setup, you might configure Logback to output JSON here, 
+  # or rely on Render's native log aggregation.

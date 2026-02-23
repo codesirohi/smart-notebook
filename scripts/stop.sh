@@ -6,6 +6,11 @@
 # Gracefully stops all services and unloads models to free RAM.
 # ==================================================================================
 
+# Change to project root
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_ROOT"
+
 # Model configuration (matches application.yml defaults)
 EXTRACTION_MODEL="${EXTRACTION_MODEL:-llama3.2}"
 EMBEDDING_MODEL="${EMBEDDING_MODEL:-nomic-embed-text}"
@@ -14,7 +19,7 @@ OLLAMA_URL="${OLLAMA_URL:-http://localhost:11434}"
 echo "🛑 Stopping Smart Notebook..."
 
 # 1. Stop Spring Boot App
-./kill_port.sh
+scripts/kill_port.sh
 
 # 2. Stop Python Worker
 pkill -f "worker/worker.py" && echo "🐍 Python Worker stopped." || echo "ℹ️  No Python Worker found."

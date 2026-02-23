@@ -61,7 +61,19 @@ clean: ## Clean build artifacts
 
 # ─── Utils ───
 kill-port: ## Kill process on port 8080
-	./kill_port.sh
+	scripts/kill_port.sh
 
 stop: ## Stop all services (App, Worker, Docker)
-	./stop.sh
+	scripts/stop.sh
+
+start: ## Start all services (Postgres, Ollama, Worker, API)
+	scripts/run-smart-notebook.sh
+
+dev: ## Start in development mode
+	scripts/dev.sh
+
+build: ## Build the project
+	scripts/build.sh
+
+cleanup: ## Deep cleanup of Docker resources
+	scripts/cleanup.sh

@@ -9,6 +9,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 
 import java.util.HashMap;
 import java.util.List;
@@ -53,6 +55,8 @@ public class GeminiGateway implements ModelGateway {
     }
 
     @Override
+    @Retry(name = "llmApi")
+    @CircuitBreaker(name = "llmApi")
     public CompletionResponse complete(CompletionRequest request) {
         if (!isEnabled())
             throw new ModelGatewayException("Gemini provider is not enabled");
@@ -92,6 +96,8 @@ public class GeminiGateway implements ModelGateway {
     }
 
     @Override
+    @Retry(name = "llmApi")
+    @CircuitBreaker(name = "llmApi")
     public Flux<String> completeStreaming(CompletionRequest request) {
         if (!isEnabled())
             return Flux.error(new ModelGatewayException("Gemini provider is disabled"));
@@ -103,6 +109,8 @@ public class GeminiGateway implements ModelGateway {
     }
 
     @Override
+    @Retry(name = "llmApi")
+    @CircuitBreaker(name = "llmApi")
     public EmbeddingResponse embed(EmbeddingRequest request) {
         if (!isEnabled())
             throw new ModelGatewayException("Gemini provider is disabled");

@@ -3,6 +3,7 @@ const POLL_INTERVAL_MS = Number(process.env.E2E_POLL_INTERVAL_MS || 2000);
 const POLL_TIMEOUT_MS = Number(process.env.E2E_POLL_TIMEOUT_MS || 120000);
 const QUERY_LATENCY_BUDGET_MS = Number(process.env.E2E_QUERY_LATENCY_BUDGET_MS || 15000);
 const ENFORCE_LATENCY_BUDGET = (process.env.E2E_ENFORCE_LATENCY_BUDGET || 'false').toLowerCase() === 'true';
+const TEST_CLOUD_MODE = (process.env.E2E_TEST_CLOUD_MODE || 'false').toLowerCase() === 'true';
 const TEST_FILE_BASE_CONTENT =
   'Cloud computing provides on-demand access to computing resources over the internet.';
 
@@ -112,6 +113,7 @@ export async function runSmartNotebookE2E(config = {}) {
   const pollIntervalMs = config.pollIntervalMs ?? POLL_INTERVAL_MS;
   const pollTimeoutMs = config.pollTimeoutMs ?? POLL_TIMEOUT_MS;
   const latencyBudgetMs = config.queryLatencyBudgetMs ?? QUERY_LATENCY_BUDGET_MS;
+  const testCloudMode = config.testCloudMode ?? TEST_CLOUD_MODE;
   const runMarker = config.runMarker ?? `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
   const uploadFile = {
     fileName: `cloud-computing-e2e-${runMarker}.txt`,
@@ -335,8 +337,8 @@ export async function runSmartNotebookE2E(config = {}) {
           typeof documentsPayload === 'object' && documentsPayload !== null && Array.isArray(documentsPayload.documents)
             ? documentsPayload.documents
             : typeof documentsPayload === 'object' &&
-                documentsPayload !== null &&
-                Array.isArray(documentsPayload.content)
+              documentsPayload !== null &&
+              Array.isArray(documentsPayload.content)
               ? documentsPayload.content
               : null;
 
@@ -387,14 +389,20 @@ export async function runSmartNotebookE2E(config = {}) {
 
     try {
       await runStep('D1) List local models', async () => {
-        const models = await request(`${baseUrl}/models/local`, { method: 'GET' }, [200]);
+        const expectedStatus = testCloudMode ? [200] : [200];
+        const models = await request(`${baseUrl}/models/local`, { method: 'GET' }, expectedStatus);
 
         if (!Array.isArray(models.body)) {
-          throw new Error(`status=200, body=${safeStringify(models.body)}`);
+          throw new Error(`status=${models.status}, body=${safeStringify(models.body)} (expected array)`);
+        }
+
+        // In cloud mode, local-models-enabled is false, which returns an empty list `[]` eagerly.
+        if (testCloudMode && models.body.length !== 0) {
+          throw new Error(`Expected empty model list in CLOUD_MODE, got ${models.body.length} items`);
         }
 
         modelMgmtPassed++;
-        return { detail: `count=${models.body.length}` };
+        return { detail: `count=${models.body.length}${testCloudMode ? ' (Cloud Mode Blank)' : ''}` };
       });
     } catch (error) {
       rememberFailure(error);
@@ -451,8 +459,14 @@ export async function runSmartNotebookE2E(config = {}) {
     }
 
     try {
-      await runStep('D5) Get hardware info', async () => {
-        const hardware = await request(`${baseUrl}/models/local/hardware`, { method: 'GET' }, [200]);
+      await runStep('D5) Get hardware info restricts in cloud mode', async () => {
+        const expectedStatus = testCloudMode ? [400] : [200];
+        const hardware = await request(`${baseUrl}/models/local/hardware`, { method: 'GET' }, expectedStatus);
+
+        if (testCloudMode) {
+          modelMgmtPassed++;
+          return { detail: 'successfully caught by Feature Flag (400 Bad Request)' };
+        }
 
         const body = hardware.body;
         if (typeof body !== 'object' || body === null) {
@@ -468,6 +482,56 @@ export async function runSmartNotebookE2E(config = {}) {
       rememberFailure(error);
     }
 
+    try {
+      await runStep('D6) Resiliency Ping & Model Health', async () => {
+        const status = await request(`${baseUrl}/models`, { method: 'GET' }, [200]);
+
+        if (!Array.isArray(status.body)) {
+          throw new Error(`status=200, body=${safeStringify(status.body)}`);
+        }
+
+        modelMgmtPassed++;
+        return { detail: 'Resilience4j endpoints online' };
+      });
+    } catch (error) {
+      rememberFailure(error);
+    }
+
+    // ─── E) Downstream E2E Workflows ───
+    try {
+      await runStep('E1) List chat history for notebook', async () => {
+        const chats = await request(`${baseUrl}/chat/${notebookId}`, { method: 'GET' }, [200]);
+
+        if (!Array.isArray(chats.body)) {
+          throw new Error(`status=200, body=${safeStringify(chats.body)}`);
+        }
+
+        // We queried above, it might be async populated, so we just verify the route responds with a 200 array.
+        return { detail: `chat records=${chats.body.length}` };
+      });
+    } catch (error) {
+      rememberFailure(error);
+    }
+
+    try {
+      await runStep('E2) Cascade delete the notebook', async () => {
+        await request(`${baseUrl}/notebooks/${notebookId}`, { method: 'DELETE' }, [204]);
+
+        // Verify it was deleted
+        const listNotebooks = await request(`${baseUrl}/notebooks`, { method: 'GET' }, [200]);
+        const notebookStillExists = listNotebooks.body.some((item) => item && item.id === notebookId);
+
+        if (notebookStillExists) {
+          throw new Error(`Notebook ${notebookId} still exists after deletion!`);
+        }
+
+        return { detail: `notebookId=${notebookId} successfully wiped` };
+      });
+    } catch (error) {
+      rememberFailure(error);
+    }
+
+    modelMgmtTotal = 6;
     summary.modelManagementResult = `${modelMgmtPassed}/${modelMgmtTotal} passed`;
 
     if (firstFailure) {

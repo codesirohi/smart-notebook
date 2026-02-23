@@ -37,12 +37,12 @@ public class DocumentService {
     private final DocumentRepository documentRepo;
     private final NotebookRepository notebookRepo;
     private final IngestionService ingestionService;
-    private final FileStorageService fileStorage;
+    private final FileStorageProvider fileStorage;
 
     public DocumentService(DocumentRepository documentRepo,
             NotebookRepository notebookRepo,
             IngestionService ingestionService,
-            FileStorageService fileStorage) {
+            FileStorageProvider fileStorage) {
         this.documentRepo = documentRepo;
         this.notebookRepo = notebookRepo;
         this.ingestionService = ingestionService;
@@ -75,7 +75,8 @@ public class DocumentService {
         // 2. Check for duplicate
         Optional<Document> existing = documentRepo.findByChecksum(checksum);
         if (existing.isPresent()) {
-            // Interview Note: Deduplication prevents wasting resources on duplicate processing
+            // Interview Note: Deduplication prevents wasting resources on duplicate
+            // processing
             StructuredLogger.warn(log, "duplicate_document_detected")
                     .field("checksum", checksum)
                     .field("existing_document_id", existing.get().getId())

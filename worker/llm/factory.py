@@ -1,8 +1,13 @@
 from enum import Enum
 import os
+import sys
 from typing import Optional
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from config import config
-from provider_registry import ProviderRegistry, LLMProvider, register_provider
+from llm.provider_registry import ProviderRegistry, LLMProvider, register_provider
 
 # Conditional imports
 try:
@@ -43,13 +48,24 @@ class OpenAIProvider(LLMProvider):
         if not ChatOpenAI: raise ImportError("langchain-openai missing")
         api_key = config.providers.get("openai")
         if not api_key: raise ValueError("OpenAI API key not found in config")
-        return ChatOpenAI(model=model_name, temperature=temperature, api_key=api_key)
+        return ChatOpenAI(
+            model=model_name, 
+            temperature=temperature, 
+            api_key=api_key,
+            max_retries=3,
+            request_timeout=30.0
+        )
 
     def create_embeddings(self, model_name: str, **kwargs):
         if not OpenAIEmbeddings: raise ImportError("langchain-openai missing")
         api_key = config.providers.get("openai")
         if not api_key: raise ValueError("OpenAI API key not found in config")
-        return OpenAIEmbeddings(model=model_name, api_key=api_key)
+        return OpenAIEmbeddings(
+            model=model_name, 
+            api_key=api_key,
+            max_retries=3,
+            request_timeout=30.0
+        )
 
 @register_provider("nvidia")
 class NvidiaProvider(LLMProvider):
@@ -94,7 +110,13 @@ class AnthropicProvider(LLMProvider):
         if not ChatAnthropic: raise ImportError("langchain-anthropic missing")
         api_key = config.providers.get("anthropic")
         if not api_key: raise ValueError("Anthropic API key not found in config")
-        return ChatAnthropic(model=model_name, temperature=temperature, api_key=api_key)
+        return ChatAnthropic(
+            model=model_name, 
+            temperature=temperature, 
+            api_key=api_key,
+            max_retries=3,
+            timeout=30.0
+        )
 
     def create_embeddings(self, model_name: str, **kwargs):
         raise ValueError("Anthropic does not support embeddings.")
@@ -110,13 +132,23 @@ class GoogleProvider(LLMProvider):
         api_key = config.providers.get("google")
         if not api_key: raise ValueError("Google API key not found in config")
         # Note: Google uses 'google_api_key' param
-        return ChatGoogleGenerativeAI(model=model_name, temperature=temperature, google_api_key=api_key)
+        return ChatGoogleGenerativeAI(
+            model=model_name, 
+            temperature=temperature, 
+            google_api_key=api_key,
+            max_retries=3,
+            timeout=30.0
+        )
 
     def create_embeddings(self, model_name: str, **kwargs):
         if not GoogleGenerativeAIEmbeddings: raise ImportError("langchain-google-genai missing")
         api_key = config.providers.get("google")
         if not api_key: raise ValueError("Google API key not found in config")
-        return GoogleGenerativeAIEmbeddings(model=model_name, google_api_key=api_key)
+        return GoogleGenerativeAIEmbeddings(
+            model=model_name, 
+            google_api_key=api_key,
+            # Langchain Google GenAI defaults to underlying transport retries
+        )
 
 @register_provider(ModelProvider.OLLAMA)
 class OllamaProvider(LLMProvider):
@@ -125,10 +157,27 @@ class OllamaProvider(LLMProvider):
         return "ollama"
 
     def create_chat_model(self, model_name: str, temperature: float = 0, **kwargs):
-        return ChatOllama(model=model_name, temperature=temperature, base_url=config.ollama_url)
+        if not config.local_models_enabled:
+            raise RuntimeError(f"Cannot initialize local Ollama model '{model_name}': Local models are disabled in this environment (Cloud Mode).")
+            
+        # Ollama wrapper doesn't use max_retries natively, but we can set timeout
+        return ChatOllama(
+            model=model_name, 
+            temperature=temperature, 
+            base_url=config.ollama_url,
+            timeout=30.0
+        )
 
     def create_embeddings(self, model_name: str, **kwargs):
-        return OllamaEmbeddings(model=model_name, base_url=config.ollama_url)
+        if not config.local_models_enabled:
+            raise RuntimeError(f"Cannot initialize local Ollama embeddings '{model_name}': Local models are disabled in this environment (Cloud Mode).")
+            
+        return OllamaEmbeddings(
+            model=model_name, 
+            base_url=config.ollama_url,
+            # OllamaEmbeddings doesn't formally accept timeout in older versions
+            # but usually inherits from generalized configs if available
+        )
 
 # --- Factory ---
 

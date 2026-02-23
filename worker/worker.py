@@ -17,19 +17,19 @@ import time
 import threading
 import os
 from config import config
-from db import (
+from core.db import (
     init_connection_pool, close_connection_pool,
     get_connection, return_connection, get_pooled_connection,
     claim_task, complete_task, fail_task,
     reap_stale_tasks, requeue_failed_tasks, store_chunks,
     update_document_status, heartbeat_worker, update_task_progress
 )
-from processor import DocumentProcessor
-from ollama_client import OllamaClient
+from core.processor import DocumentProcessor
+from llm.ollama_client import OllamaClient
 
 # ─── Structured Logging Setup ───
 try:
-    from logging_config import (
+    from core.logging_config import (
         configure_structured_logging,
         get_logger,
         log_task_start,
@@ -141,7 +141,7 @@ def run_worker():
     logger.info("stale_reaper_started", worker_id=config.worker_id)
 
     # Initialize Pipeline (replaces LangGraph)
-    from pipeline import create_ingestion_pipeline
+    from pipeline.pipeline import create_ingestion_pipeline
     ingestion_pipeline = create_ingestion_pipeline()
     logger.info(
         "pipeline_initialized",
